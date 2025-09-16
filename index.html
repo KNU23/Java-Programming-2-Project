@@ -1,15 +1,38 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset='utf-8'>
-    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
-    <title>Page Title</title>
-    <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <link rel='stylesheet' type='text/css' media='screen' href='main.css'>
-    <script src='main.js'></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Application</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    this is master
-    hehehe
+    <div id="app-container">
+        <div id="sidebar">
+            <header class="sidebar-header">
+                <div class="search-box">
+                    <input type="text" placeholder="장소, 버스, 지하철, 도로 검색">
+                    <button>검색</button>
+                </div>
+                <div class="category-filters">
+                    <button>지도 홈</button>
+                    <button class="active">버스</button>
+                    <button>지하철</button>
+                    <button>기차</button>
+                    <button>도보</button>
+                </div>
+            </header>
+            
+            <main class="info-panel">
+                <div class="result-item">
+                </div>
+            </main>
+        </div>
+
+        <div id="map"></div>
+    </div>
+
+    <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=2cys7o3zvz"></script>
+    <script src="script.js"></script>
 </body>
 </html>
