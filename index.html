@@ -11,10 +11,16 @@
         <div id="sidebar">
             <header class="sidebar-header">
                 <div class="search-box">
-                    <input type="text" placeholder="장소, 버스, 지하철, 도로 검색">
-                    <button>검색</button>
+                    <input type="text" id="start-input" placeholder="출발지 입력" autocomplete="on">
+                    <div class="autocomplete-results" id="start-results"></div>
                 </div>
-                <div class="category-filters">
+                <div class="search-box" style="margin-top: 10px;">
+                    <input type="text" id="goal-input" placeholder="목적지 입력" autocomplete="on">
+                    <div class="autocomplete-results" id="goal-results"></div>
+                </div>
+                <button id="search-button" style="width: 100%; padding: 12px; margin-top: 15px; border: none; background-color: #2DB400; color: white; font-size: 16px; cursor: pointer; border-radius: 4px;">길찾기</button>
+                
+                <div class="category-filters" style="margin-top: 15px;">
                     <button>지도 홈</button>
                     <button class="active">버스</button>
                     <button>지하철</button>
