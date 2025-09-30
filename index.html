@@ -18,20 +18,17 @@
                     <input type="text" id="goal-input" placeholder="목적지 입력" autocomplete="on">
                     <div class="autocomplete-results" id="goal-results"></div>
                 </div>
-                <button id="search-button" style="width: 100%; padding: 12px; margin-top: 15px; border: none; background-color: #2DB400; color: white; font-size: 16px; cursor: pointer; border-radius: 4px;">길찾기</button>
                 
-                <div class="category-filters" style="margin-top: 15px;">
-                    <button>지도 홈</button>
-                    <button class="active">버스</button>
-                    <button>지하철</button>
-                    <button>기차</button>
-                    <button>도보</button>
+                <button id="search-button" style="width: 100%; padding: 12px; margin-top: 15px; border: none; background-color: #2DB400; color: white; font-size: 16px; cursor: pointer; border-radius: 4px;">길찾기</button>
+
+                <div id="mode-buttons" class="category-filters" style="margin-top: 10px; margin-bottom: 15px;">
+                    <button class="active" data-mode="driving">자동차</button>
+                    <button data-mode="walking">도보</button>
                 </div>
             </header>
             
             <main class="info-panel">
-                <div class="result-item">
-                </div>
+                <div id="route-summary"></div>
             </main>
         </div>
 
