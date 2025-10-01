@@ -1,0 +1,150 @@
+/* 기본 스타일 초기화 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body, html {
+    width: 100%;
+    height: 100%;
+    font-family: 'Malgun Gothic', sans-serif;
+    overflow: hidden; /* 스크롤 방지 */
+}
+
+/* 전체 앱 레이아웃 */
+#app-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+/* 사이드바 스타일 */
+#sidebar {
+    width: 380px;
+    height: 100%;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+    background-color: #fff;
+    z-index: 10;
+}
+
+.sidebar-header {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.search-box {
+    position: relative;
+    display: flex;
+    border: 2px solid #2DB400; /* 네이버 그린 색상 */
+    border-radius: 4px;
+}
+
+.search-box input {
+    flex-grow: 1;
+    border: none;
+    padding: 12px;
+    font-size: 16px;
+    outline: none;
+}
+
+.category-filters button {
+    border: 1px solid #ddd;
+    background-color: #fff;
+    padding: 8px 12px;
+    border-radius: 20px;
+    margin-right: 8px;
+    cursor: pointer;
+}
+
+.category-filters button.active {
+    background-color: #2DB400;
+    color: white;
+    border-color: #2DB400;
+}
+
+/* 정보 패널 */
+.info-panel {
+    flex-grow: 1;
+    overflow-y: auto; /* 내용 많아지면 스크롤 */
+    padding: 15px;
+}
+
+/* 지도 스타일 */
+#map {
+    width: calc(100% - 380px); /* 전체 너비에서 사이드바 너비 빼기 */
+    height: 100%;
+}
+
+/* 마커 스타일 추가 */
+.marker {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+.marker.start {
+    background-color: #007bff; /* 출발지: 파란색 */
+}
+.marker.goal {
+    background-color: #dc3545; /* 목적지: 빨간색 */
+}
+
+/* 자동완성 결과 목록 스타일 */
+.autocomplete-results {
+    display: none; /* 평소에는 숨김 */
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    border-top: none;
+    z-index: 1000;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.autocomplete-item {
+    padding: 10px 15px;
+    cursor: pointer;
+}
+
+.autocomplete-item:hover {
+    background-color: #f5f5f5;
+}
+
+.item-title {
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.item-address {
+    font-size: 13px;
+    color: #888;
+    margin-top: 3px;
+}
+
+/* 경로 정보 요약 패널 스타일 */
+#route-summary {
+    padding: 15px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+    display: none; /* 평소에는 숨김 */
+}
+
+#route-summary .total-time {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2DB400;
+}
+
+#route-summary .total-distance {
+    font-size: 16px;
+    color: #555;
+    margin-top: 5px;
+}

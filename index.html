@@ -1,15 +1,41 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset='utf-8'>
-    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
-    <title>Page Title</title>
-    <meta name='viewport' content='width=device-width, initial-scale=1'>
-    <link rel='stylesheet' type='text/css' media='screen' href='main.css'>
-    <script src='main.js'></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Application (Kakao)</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    this is master
-    testtest
+    <div id="app-container">
+        <div id="sidebar">
+            <header class="sidebar-header">
+                <div class="search-box">
+                    <input type="text" id="start-input" placeholder="출발지 입력" autocomplete="off">
+                    <div class="autocomplete-results" id="start-results"></div>
+                </div>
+                <div class="search-box" style="margin-top: 10px;">
+                    <input type="text" id="goal-input" placeholder="목적지 입력" autocomplete="off">
+                    <div class="autocomplete-results" id="goal-results"></div>
+                </div>
+                
+                <button id="search-button" style="width: 100%; padding: 12px; margin-top: 15px; border: none; background-color: #FFCD00; color: #3C1E1E; font-size: 16px; cursor: pointer; border-radius: 4px; font-weight: bold;">길찾기</button>
+
+                <div id="mode-buttons" class="category-filters" style="margin-top: 10px; margin-bottom: 15px;">
+                    <button class="active" data-mode="driving">자동차</button>
+                    <button data-mode="walking">도보</button>
+                </div>
+            </header>
+            
+            <main class="info-panel">
+                <div id="route-summary"></div>
+            </main>
+        </div>
+
+        <div id="map"></div>
+    </div>
+
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=ad3be3cfe154e7eb855f4f9c4c32a478&libraries=services"></script>
+    <script src="script.js"></script>
 </body>
 </html>
