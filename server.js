@@ -3,82 +3,73 @@ const axios = require('axios');
 const cors = require('cors');
 
 // --- ⚠️ API 키 설정 영역 ---
-
-// 기존에 사용하던 지도 API 키 (네이버 클라우드 플랫폼)
-const NAVER_MAP_CLIENT_ID = '2cys7o3zvz';       // 기존 지도 Client ID
-const NAVER_MAP_CLIENT_SECRET = 'LldeJGCpUGNUuvMsqJrcYbv4cgD845pfhzdFGlFN'; // 기존 지도 Client Secret
-
-// 새로 받은 검색 API 키 (네이버 개발자 센터)
-const NAVER_SEARCH_CLIENT_ID = 'Y1heJbdgTBLWFgPweCs9';       // 새로 받은 검색 Client ID
-const NAVER_SEARCH_CLIENT_SECRET = 'z_SPDU1_JX'; // 새로 받은 검색 Client Secret
+// 카카오 개발자 사이트에서 발급받은 REST API 키를 입력하세요.
+const KAKAO_REST_API_KEY = '1d09a578a80ee97a45b3fd96e637f821';
 
 const app = express();
 const port = 3000;
 
 app.use(cors());
 
-// --- 지도 관련 API 프록시 ---
-app.get('/api/geocode', async (req, res) => {
-    try {
-        const query = req.query.query;
-        const apiUrl = `https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode?query=${encodeURIComponent(query)}`;
-        const response = await axios.get(apiUrl, {
-            headers: {
-                'X-NCP-APIGW-API-KEY-ID': NAVER_MAP_CLIENT_ID, // 지도 키 사용
-                'X-NCP-APIGW-API-KEY': NAVER_MAP_CLIENT_SECRET
-            }
-        });
-        res.json(response.data);
-    } catch (error) { console.error("!!! Geocode 프록시 에러:", error.response?.data || error.message); res.status(500).json({ message: 'Geocoding API 프록시 실패' }); }
-});
+// --- 카카오 API 프록시 ---
 
-app.get('/api/reverse-geocode', async (req, res) => {
-    try {
-        const coords = req.query.coords;
-        const apiUrl = `https://openapi.naver.com/v1/map-reversegeocode/v2/gc?coords=${coords}&output=json`;
-        const response = await axios.get(apiUrl, {
-            headers: {
-                'X-NCP-APIGW-API-KEY-ID': NAVER_MAP_CLIENT_ID, // 지도 키 사용
-                'X-NCP-APIGW-API-KEY': NAVER_MAP_CLIENT_SECRET
-            }
-        });
-        res.json(response.data);
-    } catch (error) { console.error("!!! Reverse Geocode 프록시 에러:", error.response?.data || error.message); res.status(500).json({ message: 'Reverse Geocoding API 프록시 실패' }); }
-});
-
-app.get('/api/directions', async (req, res) => {
-    try {
-        const { start, goal, mode } = req.query;
-        let apiUrl;
-        if (mode === 'walking') {
-            apiUrl = `https://naveropenapi.apigw.ntruss.com/map-direction-15/v1/walking?start=${start}&goal=${goal}`;
-        } else {
-            apiUrl = `https://naveropenapi.apigw.ntruss.com/map-direction/v1/driving?start=${start}&goal=${goal}&option=trafast`;
-        }
-        const response = await axios.get(apiUrl, {
-            headers: {
-                'X-NCP-APIGW-API-KEY-ID': NAVER_MAP_CLIENT_ID, // 지도 키 사용
-                'X-NCP-APIGW-API-KEY': NAVER_MAP_CLIENT_SECRET
-            }
-        });
-        res.json(response.data);
-    } catch (error) { console.error("!!! Directions 프록시 에러:", error.response?.data || error.message); res.status(500).json({ message: 'Directions API 프록시 실패' }); }
-});
-
-// --- 검색 관련 API 프록시 ---
+// [장소 검색 API] 키워드로 장소를 검색합니다.
 app.get('/api/search', async (req, res) => {
     try {
         const query = req.query.query;
-        if (!query) { return res.status(400).json({ message: '검색어가 필요합니다.' }); }
-        const apiUrl = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(query)}&display=5`;
+        if (!query) {
+            return res.status(400).json({ message: '검색어가 필요합니다.' });
+        }
+        const apiUrl = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(query)}`;
+        
         const response = await axios.get(apiUrl, {
             headers: {
-                'X-Naver-Client-Id': NAVER_SEARCH_CLIENT_ID,     // ⚠️ 검색 키와 다른 헤더 이름 사용
-                'X-Naver-Client-Secret': NAVER_SEARCH_CLIENT_SECRET
+                'Authorization': `KakaoAK ${KAKAO_REST_API_KEY}`
             }
         });
         res.json(response.data);
-    } catch (error) { console.error("!!! Search 프록시 에러:", error.response?.data || error.message); res.status(500).json({ message: 'Search API 프록시 실패' }); }
+    } catch (error) {
+        console.error("!!! Kakao Search 프록시 에러:", error.response?.data || error.message);
+        res.status(500).json({ message: '카카오 장소 검색 API 프록시 실패' });
+    }
+});
+
+// [길찾기 API] 자동차 또는 도보 길찾기 경로를 요청합니다.
+app.get('/api/directions', async (req, res) => {
+    try {
+        const { origin, destination, mode } = req.query;
+        let apiUrl;
+
+        if (mode === 'walking') {
+            // 도보 길찾기는 POST 요청만 지원합니다.
+            apiUrl = 'https://apis-navi.kakaomobility.com/v1/directions';
+            const response = await axios.post(apiUrl, {
+                origin: origin,
+                destination: destination,
+                priority: "RECOMMEND",
+                car_type: 7 // 도보
+            }, {
+                 headers: {
+                    'Authorization': `KakaoAK ${KAKAO_REST_API_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+             res.json(response.data);
+
+        } else { // 자동차
+            apiUrl = `https://apis-navi.kakaomobility.com/v1/directions?origin=${origin}&destination=${destination}`;
+            const response = await axios.get(apiUrl, {
+                headers: {
+                    'Authorization': `KakaoAK ${KAKAO_REST_API_KEY}`
+                }
+            });
+             res.json(response.data);
+        }
+       
+    } catch (error) {
+        console.error("!!! Kakao Directions 프록시 에러:", error.response?.data || error.message);
+        res.status(500).json({ message: '카카오 길찾기 API 프록시 실패' });
+    }
 });
 
 app.listen(port, () => {

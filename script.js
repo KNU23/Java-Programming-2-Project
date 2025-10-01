@@ -1,26 +1,30 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // API 요청을 보낼 프록시 서버의 주소
     const proxyServerUrl = 'http://localhost:3000';
 
-    // 네이버 지도 초기화
-    const map = new naver.maps.Map('map', { 
-        center: new naver.maps.LatLng(37.5665, 126.9780), 
-        zoom: 15 
-    });
-    
+    // 카카오 지도 초기화
+    const mapContainer = document.getElementById('map');
+    const mapOption = {
+        center: new kakao.maps.LatLng(37.5665, 126.9780),
+        level: 5
+    };
+    const map = new kakao.maps.Map(mapContainer, mapOption);
+
     // 지도 위에 표시될 요소들을 저장할 변수
-    let startMarker = null, goalMarker = null, routePolyline = null;
-    
+    let startMarker = null, goalMarker = null;
+    let routePolyline = null, routePolylineBorder = null; // 📌 테두리 선을 위한 변수 추가
+    let routeMarkers = []; 
+
     // HTML 요소 선택
+    // (이전과 동일)
     const startInput = document.getElementById('start-input');
     const goalInput = document.getElementById('goal-input');
     const searchButton = document.getElementById('search-button');
     const startResults = document.getElementById('start-results');
     const goalResults = document.getElementById('goal-results');
+    const modeButtonsContainer = document.getElementById('mode-buttons');
+    const routeSummaryPanel = document.getElementById('route-summary');
 
-    // --- 자동완성 기능 ---
-
-    // Debounce: 입력이 끝난 후 일정 시간 뒤에 함수를 실행하여 불필요한 API 호출 방지
+    // --- 자동완성 및 기타 함수 (이전과 동일) ---
     const debounce = (func, delay) => {
         let timeout;
         return (...args) => {
@@ -29,8 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     };
 
-    // 장소 검색 API 호출 함수
-    const fetchSearchResults = async (query, resultsContainer) => {
+    const fetchSearchResults = async (query, resultsContainer, inputElement) => {
         if (!query) {
             resultsContainer.innerHTML = '';
             resultsContainer.style.display = 'none';
@@ -39,28 +42,23 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${proxyServerUrl}/api/search?query=${encodeURIComponent(query)}`);
             const data = await response.json();
-            displayResults(data.items || [], resultsContainer);
+            displayResults(data.documents || [], resultsContainer, inputElement);
         } catch (error) {
             console.error("Search API fetch error:", error);
         }
     };
 
-    // 검색 결과를 목록으로 화면에 표시하는 함수
-    const displayResults = (items, resultsContainer) => {
+    const displayResults = (items, resultsContainer, inputElement) => {
         resultsContainer.innerHTML = '';
         if (items.length > 0) {
             items.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'autocomplete-item';
-                const cleanTitle = item.title.replace(/<[^>]*>?/g, ''); // <b> 태그 제거
-                div.innerHTML = `<div class="item-title">${cleanTitle}</div><div class="item-address">${item.address}</div>`;
+                div.innerHTML = `<div class="item-title">${item.place_name}</div><div class="item-address">${item.address_name}</div>`;
                 
                 div.addEventListener('click', () => {
-                    if (resultsContainer.id === 'start-results') {
-                        startInput.value = cleanTitle;
-                    } else {
-                        goalInput.value = cleanTitle;
-                    }
+                    inputElement.value = item.place_name;
+                    inputElement.dataset.coords = `${item.x},${item.y}`; 
                     resultsContainer.style.display = 'none';
                 });
                 resultsContainer.appendChild(div);
@@ -71,125 +69,164 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // 각 입력창에 'input' 이벤트 리스너 연결
-    startInput.addEventListener('input', debounce(() => fetchSearchResults(startInput.value, startResults), 300));
-    goalInput.addEventListener('input', debounce(() => fetchSearchResults(goalInput.value, goalResults), 300));
+    startInput.addEventListener('input', debounce(() => fetchSearchResults(startInput.value, startResults, startInput), 300));
+    goalInput.addEventListener('input', debounce(() => fetchSearchResults(goalInput.value, goalResults, goalInput), 300));
     
-    // 다른 곳을 클릭하면 자동완성 창 닫기
     document.addEventListener('click', (e) => {
         if (!startInput.contains(e.target)) startResults.style.display = 'none';
         if (!goalInput.contains(e.target)) goalResults.style.display = 'none';
     });
 
-
-    // --- 길찾기 기능 ---
-
-    // 현재 위치 가져와서 출발지 자동 완성
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(onSuccessGeolocation, onErrorGeolocation, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-    }
+    let currentMode = 'driving';
+    modeButtonsContainer.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') {
+            modeButtonsContainer.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            currentMode = e.target.dataset.mode;
+        }
+    });
     
-    async function onSuccessGeolocation(position) {
-        const location = new naver.maps.LatLng(position.coords.latitude, position.coords.longitude);
-        map.setCenter(location);
-        const address = await reverseGeocodeCoords(location);
-        if (address) startInput.value = address;
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const locPosition = new kakao.maps.LatLng(lat, lng);
+            map.setCenter(locPosition);
+            
+            const geocoder = new kakao.maps.services.Geocoder();
+            geocoder.coord2Address(lng, lat, (result, status) => {
+                if (status === kakao.maps.services.Status.OK) {
+                    const address = result[0].road_address ? result[0].road_address.address_name : result[0].address.address_name;
+                    startInput.value = address;
+                    startInput.dataset.coords = `${lng},${lat}`;
+                }
+            });
+        }, () => {
+            console.error("Could not get location information.");
+        });
     }
 
-    function onErrorGeolocation(error) { 
-        console.error("Could not get location information.", error); 
-    }
-
-    // 길찾기 버튼 및 엔터 키 이벤트 리스너
     searchButton.addEventListener('click', findAndDrawRoute);
-    startInput.addEventListener('keydown', (e) => e.key === 'Enter' && findAndDrawRoute());
     goalInput.addEventListener('keydown', (e) => e.key === 'Enter' && findAndDrawRoute());
 
-    // 길찾기 메인 로직
     async function findAndDrawRoute() {
-        const startQuery = startInput.value;
-        const goalQuery = goalInput.value;
-        if (!startQuery || !goalQuery) { 
-            alert('출발지와 목적지를 모두 입력해주세요.'); 
+        const startCoords = startInput.dataset.coords;
+        const goalCoords = goalInput.dataset.coords;
+
+        if (!startCoords || !goalCoords) { 
+            alert('출발지와 목적지를 모두 선택해주세요. (자동완성 목록에서 클릭)'); 
             return; 
         }
+        
         try {
-            const [startCoords, goalCoords] = await Promise.all([geocodeAddress(startQuery), geocodeAddress(goalQuery)]);
-            if (!startCoords || !goalCoords) return;
+            const response = await fetch(`${proxyServerUrl}/api/directions?origin=${startCoords}&destination=${goalCoords}&mode=${currentMode}`);
+            const data = await response.json();
 
-            const routePath = await getDirections(startCoords, goalCoords);
-            if (!routePath) return;
-            
-            drawRoute(startCoords, goalCoords, routePath);
-        } catch (error) { 
+            if (data.routes && data.routes.length > 0) {
+                const route = data.routes[0];
+                drawRoute(route.sections);
+                displayRouteSummary(route.summary);
+            } else {
+                alert('경로를 찾을 수 없습니다.');
+            }
+        } catch (error) {
             console.error('길찾기 과정에서 오류 발생:', error); 
             alert('경로를 찾는 데 실패했습니다.'); 
         }
     }
-
-    // 좌표 -> 주소 변환 (Reverse Geocoding)
-    async function reverseGeocodeCoords(coords) {
-        const apiUrl = `${proxyServerUrl}/api/reverse-geocode?coords=${coords.lng()},${coords.lat()}`;
-        try {
-            const response = await fetch(apiUrl);
-            const data = await response.json();
-            if (data.status && data.status.code === 0 && data.results.length > 0) {
-                return data.results[0].region.area1.name + ' ' + data.results[0].region.area2.name + ' ' + (data.results[0].land.name || '');
-            }
-        } catch (error) { 
-            console.error('Reverse Geocoding 실패:', error); 
-        }
-        return null;
-    }
-
-    // 주소 -> 좌표 변환 (Geocoding)
-    async function geocodeAddress(address) {
-        const apiUrl = `${proxyServerUrl}/api/geocode?query=${encodeURIComponent(address)}`;
-        try {
-            const response = await fetch(apiUrl);
-            const data = await response.json();
-            if (data.status !== 'OK' || data.addresses.length === 0) { 
-                alert(`'${address}' 주소를 찾을 수 없습니다.`); 
-                return null; 
-            }
-            return new naver.maps.LatLng(data.addresses[0].y, data.addresses[0].x);
-        } catch (error) { 
-            console.error('지오코딩 실패:', error); 
-            return null; 
-        }
-    }
-
-    // 길찾기 API 호출
-    async function getDirections(start, goal) {
-        const startPoint = `${start.lng()},${start.lat()}`;
-        const goalPoint = `${goal.lng()},${goal.lat()}`;
-        const apiUrl = `${proxyServerUrl}/api/directions?start=${startPoint}&goal=${goalPoint}`;
-        try {
-            const response = await fetch(apiUrl);
-            const data = await response.json();
-            if (data.code !== 0) { 
-                alert('길찾기 실패: ' + data.message); 
-                return null; 
-            }
-            return data.route.trafast[0].path.map(point => new naver.maps.LatLng(point[1], point[0]));
-        } catch (error) { 
-            console.error('Directions API 호출 실패:', error); 
-            return null; 
-        }
-    }
     
-    // 지도에 경로와 마커 그리기
-    function drawRoute(start, goal, path) {
+       // 📌 --- 경로 그리기 함수 (drawRoute) 전체 수정 ---
+    function drawRoute(sections) {
+        // 기존 지도 요소들 모두 제거
         if (startMarker) startMarker.setMap(null);
         if (goalMarker) goalMarker.setMap(null);
         if (routePolyline) routePolyline.setMap(null);
+        if (routePolylineBorder) routePolylineBorder.setMap(null);
+        routeMarkers.forEach(marker => marker.setMap(null));
+        routeMarkers = [];
+
+        const pathPoints = [];
+        const bounds = new kakao.maps.LatLngBounds();
+
+        sections.forEach(section => {
+            section.roads.forEach(road => {
+                for (let i = 0; i < road.vertexes.length; i += 2) {
+                    const lng = road.vertexes[i];
+                    const lat = road.vertexes[i + 1];
+                    const point = new kakao.maps.LatLng(lat, lng);
+                    pathPoints.push(point);
+                    bounds.extend(point);
+                }
+            });
+        });
+
+        // 1. 테두리 폴리라인 생성
+        routePolylineBorder = new kakao.maps.Polyline({
+            path: pathPoints,
+            strokeWeight: 9,
+            strokeColor: '#00008B',
+            strokeOpacity: 0.8,
+            strokeStyle: 'solid',
+            zIndex: 1
+        });
+        routePolylineBorder.setMap(map);
+
+        // 2. 메인 폴리라인 생성
+        routePolyline = new kakao.maps.Polyline({
+            path: pathPoints,
+            strokeWeight: 5,
+            strokeColor: '#00BFFF',
+            strokeOpacity: 0.9,
+            strokeStyle: 'solid',
+            zIndex: 2
+        });
+        routePolyline.setMap(map);
+
+        // 경로 점 마커 (이전과 동일)
+        const markerImageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/point_blue.png';
+        const markerImageSize = new kakao.maps.Size(6, 6);
+        const markerImage = new kakao.maps.MarkerImage(markerImageSrc, markerImageSize);
+        const markerInterval = 10;
+        for (let i = 0; i < pathPoints.length; i += markerInterval) {
+            const pointMarker = new kakao.maps.Marker({
+                position: pathPoints[i],
+                image: markerImage,
+                map: map,
+                zIndex: 3
+            });
+            routeMarkers.push(pointMarker);
+        }
+
+        // 📌 3. 출발/도착 마커를 기본 마커로 변경
+        const startPoint = pathPoints[0];
+        const goalPoint = pathPoints[pathPoints.length - 1];
         
-        startMarker = new naver.maps.Marker({ position: start, map: map, icon: { content: '<div class="marker start"></div>', anchor: new naver.maps.Point(10, 10) } });
-        goalMarker = new naver.maps.Marker({ position: goal, map: map, icon: { content: '<div class="marker goal"></div>', anchor: new naver.maps.Point(10, 10) } });
-        
-        routePolyline = new naver.maps.Polyline({ path: path, strokeColor: '#2DB400', strokeOpacity: 0.8, strokeWeight: 6, map: map });
-        
-        const bounds = new naver.maps.LatLngBounds(start, goal);
-        map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 430 });
+        // 📌 커스텀 이미지 관련 코드를 모두 제거하고, 가장 기본적인 형태로 마커를 생성합니다.
+        startMarker = new kakao.maps.Marker({ position: startPoint, zIndex: 5 });
+        goalMarker = new kakao.maps.Marker({ position: goalPoint, zIndex: 5 });
+
+        startMarker.setMap(map);
+        goalMarker.setMap(map);
+
+        map.setBounds(bounds);
+    }
+
+    function displayRouteSummary(summary) {
+        const duration = summary.duration; 
+        const distance = summary.distance; 
+
+        const hours = Math.floor(duration / 3600);
+        const minutes = Math.floor((duration % 3600) / 60);
+        const distanceKm = (distance / 1000).toFixed(1);
+
+        let timeHtml = '';
+        if (hours > 0) timeHtml += `${hours}시간 `;
+        timeHtml += `${minutes}분`;
+
+        routeSummaryPanel.innerHTML = `
+            <div class="total-time" style="color: #3C1E1E;">${timeHtml}</div>
+            <div class="total-distance">총 거리 ${distanceKm}km</div>
+        `;
+        routeSummaryPanel.style.display = 'block';
     }
 });
