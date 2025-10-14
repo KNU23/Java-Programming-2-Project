@@ -37,34 +37,20 @@ app.get('/api/search', async (req, res) => {
 // [길찾기 API] 자동차 또는 도보 길찾기 경로를 요청합니다.
 app.get('/api/directions', async (req, res) => {
     try {
-        const { origin, destination, mode } = req.query;
+        // [수정] priority(경로 옵션) 값을 쿼리에서 받아옵니다.
+        const { origin, destination, priority = 'RECOMMEND' } = req.query;
         let apiUrl;
 
-        if (mode === 'walking') {
-            // 도보 길찾기는 POST 요청만 지원합니다.
-            apiUrl = 'https://apis-navi.kakaomobility.com/v1/directions';
-            const response = await axios.post(apiUrl, {
-                origin: origin,
-                destination: destination,
-                priority: "RECOMMEND",
-                car_type: 7 // 도보
-            }, {
-                 headers: {
-                    'Authorization': `KakaoAK ${KAKAO_REST_API_KEY}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-             res.json(response.data);
-
-        } else { // 자동차
-            apiUrl = `https://apis-navi.kakaomobility.com/v1/directions?origin=${origin}&destination=${destination}`;
-            const response = await axios.get(apiUrl, {
-                headers: {
-                    'Authorization': `KakaoAK ${KAKAO_REST_API_KEY}`
-                }
-            });
-             res.json(response.data);
-        }
+        // 현재 로직에서는 자동차 길찾기만 사용하므로 해당 부분만 수정합니다.
+        // [수정] API 주소에 priority 파라미터를 추가합니다.
+        apiUrl = `https://apis-navi.kakaomobility.com/v1/directions?origin=${origin}&destination=${destination}&priority=${priority}`;
+        
+        const response = await axios.get(apiUrl, {
+            headers: {
+                'Authorization': `KakaoAK ${KAKAO_REST_API_KEY}`
+            }
+        });
+        res.json(response.data);
        
     } catch (error) {
         console.error("!!! Kakao Directions 프록시 에러:", error.response?.data || error.message);

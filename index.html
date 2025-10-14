@@ -4,14 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>도착 시간 기준 길찾기</title>
-    <!-- Font Awesome 아이콘 라이브러리 로드 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- 외부 CSS 파일 연결 -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- 화면 1: 시작 화면 (기존과 동일) -->
     <div class="hero-section active">
         <header class="top-header">
             <div class="corporate-logo">javaproject</div>
@@ -42,11 +39,13 @@
                 <form class="search-form" id="hero-form">
                     <div class="input-group">
                         <label for="start-point-hero">출발지</label>
-                        <input type="text" id="start-point-hero" placeholder="어디서 출발하세요?">
+                        <input type="text" id="start-point-hero" placeholder="어디서 출발하세요?" autocomplete="off">
+                        <div class="suggestions-list" id="start-suggestions"></div>
                     </div>
                     <div class="input-group">
                         <label for="end-point-hero">도착지</label>
-                        <input type="text" id="end-point-hero" placeholder="어디로 가시나요?">
+                        <input type="text" id="end-point-hero" placeholder="어디로 가시나요?" autocomplete="off">
+                        <div class="suggestions-list" id="end-suggestions"></div>
                     </div>
                     <div class="input-group has-switch">
                         <div class="input-field-wrapper">
@@ -74,7 +73,6 @@
         </div>
     </div>
 
-    <!-- [신규] 화면 2: 결과 페이지 -->
     <div id="results-page">
         <header id="results-header">
             <div class="results-header-content">
@@ -118,9 +116,7 @@
         </main>
     </div>
 
-    <!-- 네이버 지도 API 스크립트 -->
-    <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=YOUR_CLIENT_ID"></script>
+    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=ad3be3cfe154e7eb855f4f9c4c32a478&libraries=services"></script>
     <script src="script.js"></script>
 </body>
 </html>
-

@@ -10,17 +10,18 @@ html, body {
     height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background-color: #f4f7f9; /* 하단 영역의 밝은 회색 배경 */
+    scroll-behavior: smooth;
 }
 
 /* 상단 배너 영역 */
 .hero-section {
     background-color: #1B4373; /* 요청하신 단일 파란색 배경 */
     color: white;
-    height: 70vh; /* 화면 높이의 70% 차지 */
+    min-height: 50vh; /* 최소 높이 설정 */
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: 0 50px;
+    padding: 100px 50px 50px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.1);
     position: relative;
 }
@@ -165,7 +166,6 @@ html, body {
     font-size: 1.1rem;
     color: #333;
     background-color: transparent;
-    /* [수정] z-index 문제를 해결하기 위한 스타일 */
     position: relative;
     z-index: 2;
 }
@@ -174,7 +174,49 @@ html, body {
     color: #ccc;
 }
 
-/* [수정] 날짜/시간 입력창의 커서 모양 변경 */
+/* --- [신규] 검색어 제안 목록 스타일 --- */
+.suggestions-list {
+    display: none; /* 기본적으로 숨김 */
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: white;
+    border: 1px solid #eee;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.suggestion-item {
+    padding: 12px 20px;
+    font-size: 0.95rem;
+    color: #333;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    border-bottom: 1px solid #f5f5f5;
+}
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+.suggestion-item:hover {
+    background-color: #f5f5f5;
+}
+.suggestion-item .place-name {
+    font-weight: 500;
+}
+.suggestion-item .address-name {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 2px;
+}
+/* --- 스타일 끝 --- */
+
+
+/* 날짜/시간 입력창의 커서 모양 변경 */
 input[type="date"], input[type="time"] {
     cursor: pointer;
 }
@@ -235,8 +277,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 
 #results-page {
     width: 100%;
-    /* [수정] height를 100vh로 설정하여 스크롤의 목적지가 되도록 함 */
-    height: 100vh; 
+    height: 100vh; /* 화면 전체 높이 사용 */
     display: flex; 
     flex-direction: column;
 }
@@ -321,6 +362,7 @@ input[type="date"], input[type="time"] {
 #results-content {
     display: flex;
     flex-grow: 1;
+    overflow: hidden; /* 스크롤바 방지 */
 }
 
 #route-sidebar {
@@ -328,6 +370,7 @@ input[type="date"], input[type="time"] {
     background-color: #ffffff;
     border-right: 1px solid #e0e0e0;
     overflow-y: auto;
+    flex-shrink: 0;
 }
 
 .sidebar-content {
@@ -343,3 +386,40 @@ input[type="date"], input[type="time"] {
     height: 100%;
     background-color: #e0e0e0; /* 지도 로딩 전 배경색 */
 }
+
+/* --- [신규] 경로 카드 스타일 --- */
+.route-card {
+    border: 1px solid transparent;
+    border-bottom: 1px solid #eee;
+    padding: 20px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-left 0.2s;
+}
+.route-card:hover {
+    background-color: #f9f9f9;
+}
+.route-card.active {
+    background-color: #f5f8ff;
+    border-left: 4px solid #1B4373;
+}
+.route-card-header {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1B4373;
+    margin-bottom: 10px;
+}
+.route-card-body {
+    display: flex;
+    align-items: baseline;
+    gap: 15px;
+}
+.route-card-body .duration {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #333;
+}
+.route-card-body .meta-info {
+    font-size: 0.9rem;
+    color: #666;
+}
+/* --- 스타일 끝 --- */
