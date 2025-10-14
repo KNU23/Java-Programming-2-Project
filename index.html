@@ -1,41 +1,126 @@
 <!DOCTYPE html>
-<html>
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Map Application (Kakao)</title>
+    <title>도착 시간 기준 길찾기</title>
+    <!-- Font Awesome 아이콘 라이브러리 로드 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- 외부 CSS 파일 연결 -->
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="app-container">
-        <div id="sidebar">
-            <header class="sidebar-header">
-                <div class="search-box">
-                    <input type="text" id="start-input" placeholder="출발지 입력" autocomplete="off">
-                    <div class="autocomplete-results" id="start-results"></div>
-                </div>
-                <div class="search-box" style="margin-top: 10px;">
-                    <input type="text" id="goal-input" placeholder="목적지 입력" autocomplete="off">
-                    <div class="autocomplete-results" id="goal-results"></div>
-                </div>
-                
-                <button id="search-button" style="width: 100%; padding: 12px; margin-top: 15px; border: none; background-color: #FFCD00; color: #3C1E1E; font-size: 16px; cursor: pointer; border-radius: 4px; font-weight: bold;">길찾기</button>
 
-                <div id="mode-buttons" class="category-filters" style="margin-top: 10px; margin-bottom: 15px;">
-                    <button class="active" data-mode="driving">자동차</button>
-                    <button data-mode="walking">도보</button>
-                </div>
+    <!-- 화면 1: 시작 화면 (기존과 동일) -->
+    <div class="hero-section active">
+        <header class="top-header">
+            <div class="corporate-logo">javaproject</div>
+            <div class="login-button-top">
+                <i class="fa-solid fa-circle-user"></i>
+                <span>로그인</span>
+            </div>
+        </header>
+        <div class="content-wrapper">
+            <header class="app-header">
+                <div class="logo-text">당신의 모든 약속, 정확한 시간에.</div>
+                <nav class="mode-selector">
+                    <button id="mode-walk-hero">
+                        <i class="fa-solid fa-person-walking"></i> 도보
+                    </button>
+                    <button id="mode-bike-hero">
+                        <i class="fa-solid fa-bicycle"></i> 자전거
+                    </button>
+                    <button id="mode-car-hero" class="active">
+                        <i class="fa-solid fa-car"></i> 자동차
+                    </button>
+                    <button id="mode-transit-hero">
+                        <i class="fa-solid fa-bus"></i> 대중교통
+                    </button>
+                </nav>
             </header>
-            
-            <main class="info-panel">
-                <div id="route-summary"></div>
+            <main class="search-section">
+                <form class="search-form" id="hero-form">
+                    <div class="input-group">
+                        <label for="start-point-hero">출발지</label>
+                        <input type="text" id="start-point-hero" placeholder="어디서 출발하세요?">
+                    </div>
+                    <div class="input-group">
+                        <label for="end-point-hero">도착지</label>
+                        <input type="text" id="end-point-hero" placeholder="어디로 가시나요?">
+                    </div>
+                    <div class="input-group has-switch">
+                        <div class="input-field-wrapper">
+                            <label for="arrival-date-hero">가는 날짜</label>
+                            <input type="date" id="arrival-date-hero">
+                        </div>
+                        <div class="on-off-switch" id="date-switch-hero">
+                            <button type="button" class="switch-btn active" data-value="on">on</button>
+                            <button type="button" class="switch-btn" data-value="off">off</button>
+                        </div>
+                    </div>
+                    <div class="input-group has-switch">
+                        <div class="input-field-wrapper">
+                            <label for="arrival-time-hero">도착 시간</label>
+                            <input type="time" id="arrival-time-hero">
+                        </div>
+                         <div class="on-off-switch" id="time-switch-hero">
+                            <button type="button" class="switch-btn active" data-value="on">on</button>
+                            <button type="button" class="switch-btn" data-value="off">off</button>
+                        </div>
+                    </div>
+                    <button type="submit" class="search-button">검색하기</button>
+                </form>
             </main>
         </div>
-
-        <div id="map"></div>
     </div>
 
-    <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=ad3be3cfe154e7eb855f4f9c4c32a478&libraries=services"></script>
+    <!-- [신규] 화면 2: 결과 페이지 -->
+    <div id="results-page">
+        <header id="results-header">
+            <div class="results-header-content">
+                <div class="corporate-logo-header">javaproject</div>
+                <div class="search-form-header">
+                    <div class="input-group-header">
+                        <label>출발</label>
+                        <input type="text" id="start-point-header">
+                    </div>
+                    <div class="input-group-header">
+                        <label>도착</label>
+                        <input type="text" id="end-point-header">
+                    </div>
+                    <div class="input-group-header">
+                        <label>날짜</label>
+                        <input type="date" id="arrival-date-header">
+                    </div>
+                    <div class="input-group-header">
+                        <label>시간</label>
+                        <input type="time" id="arrival-time-header">
+                    </div>
+                    <button id="research-button">다시 검색</button>
+                </div>
+                <div class="login-button-header">
+                    <i class="fa-solid fa-circle-user"></i>
+                    <span>로그인</span>
+                </div>
+            </div>
+        </header>
+
+        <main id="results-content">
+            <aside id="route-sidebar">
+                <div class="sidebar-content">
+                    <h2>경로 정보</h2>
+                    <p>이곳에 경로 요약, 소요 시간, 거리 등의 정보가 표시됩니다.</p>
+                </div>
+            </aside>
+            <div id="map-container">
+                <div id="map"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 네이버 지도 API 스크립트 -->
+    <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=YOUR_CLIENT_ID"></script>
     <script src="script.js"></script>
 </body>
 </html>
+
