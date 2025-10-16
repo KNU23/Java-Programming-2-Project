@@ -1,232 +1,323 @@
 document.addEventListener('DOMContentLoaded', () => {
     const proxyServerUrl = 'http://localhost:3000';
-
-    // 카카오 지도 초기화
-    const mapContainer = document.getElementById('map');
-    const mapOption = {
-        center: new kakao.maps.LatLng(37.5665, 126.9780),
-        level: 5
-    };
-    const map = new kakao.maps.Map(mapContainer, mapOption);
-
-    // 지도 위에 표시될 요소들을 저장할 변수
-    let startMarker = null, goalMarker = null;
-    let routePolyline = null, routePolylineBorder = null; // 📌 테두리 선을 위한 변수 추가
-    let routeMarkers = []; 
-
-    // HTML 요소 선택
-    // (이전과 동일)
-    const startInput = document.getElementById('start-input');
-    const goalInput = document.getElementById('goal-input');
-    const searchButton = document.getElementById('search-button');
-    const startResults = document.getElementById('start-results');
-    const goalResults = document.getElementById('goal-results');
-    const modeButtonsContainer = document.getElementById('mode-buttons');
-    const routeSummaryPanel = document.getElementById('route-summary');
-
-    // --- 자동완성 및 기타 함수 (이전과 동일) ---
-    const debounce = (func, delay) => {
-        let timeout;
-        return (...args) => {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(this, args), delay);
-        };
-    };
-
-    const fetchSearchResults = async (query, resultsContainer, inputElement) => {
-        if (!query) {
-            resultsContainer.innerHTML = '';
-            resultsContainer.style.display = 'none';
-            return;
-        }
-        try {
-            const response = await fetch(`${proxyServerUrl}/api/search?query=${encodeURIComponent(query)}`);
-            const data = await response.json();
-            displayResults(data.documents || [], resultsContainer, inputElement);
-        } catch (error) {
-            console.error("Search API fetch error:", error);
-        }
-    };
-
-    const displayResults = (items, resultsContainer, inputElement) => {
-        resultsContainer.innerHTML = '';
-        if (items.length > 0) {
-            items.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'autocomplete-item';
-                div.innerHTML = `<div class="item-title">${item.place_name}</div><div class="item-address">${item.address_name}</div>`;
-                
-                div.addEventListener('click', () => {
-                    inputElement.value = item.place_name;
-                    inputElement.dataset.coords = `${item.x},${item.y}`; 
-                    resultsContainer.style.display = 'none';
-                });
-                resultsContainer.appendChild(div);
-            });
-            resultsContainer.style.display = 'block';
-        } else {
-            resultsContainer.style.display = 'none';
-        }
-    };
-
-    startInput.addEventListener('input', debounce(() => fetchSearchResults(startInput.value, startResults, startInput), 300));
-    goalInput.addEventListener('input', debounce(() => fetchSearchResults(goalInput.value, goalResults, goalInput), 300));
+    const heroSection = document.querySelector('.hero-section');
+    const resultsPage = document.getElementById('results-page');
+    const heroForm = document.getElementById('hero-form');
     
+    // 메인 페이지 입력 필드
+    const startPointHero = document.getElementById('start-point-hero');
+    const endPointHero = document.getElementById('end-point-hero');
+    const startSuggestions = document.getElementById('start-suggestions');
+    const endSuggestions = document.getElementById('end-suggestions');
+
+    // 결과 페이지의 입력 필드
+    const startPointHeader = document.getElementById('start-point-header');
+    const endPointHeader = document.getElementById('end-point-header');
+    const arrivalDateHeader = document.getElementById('arrival-date-header');
+    const arrivalTimeHeader = document.getElementById('arrival-time-header');
+    const researchButton = document.getElementById('research-button');
+    const routeSidebar = document.getElementById('route-sidebar');
+
+    // 지도 및 경로 관련 전역 변수
+    let map = null;
+    let startMarker = null, endMarker = null;
+    let routePolylines = [];
+    let currentRoutesData = [];
+    let debounceTimer;
+
+    // --- 초기 UI 설정 ---
+    resultsPage.style.display = 'none';
+    setupDateTimeDefaults();
+    setupModeSelectors();
+    setupSwitch('date-switch-hero');
+    setupSwitch('time-switch-hero');
+
+    // --- 이벤트 리스너 ---
+    heroForm.addEventListener('submit', handleFormSubmit);
+    researchButton.addEventListener('click', () => {
+        findAndDisplayRoutes(startPointHeader.value, endPointHeader.value);
+    });
+
+    startPointHero.addEventListener('input', () => handleAutocomplete(startPointHero, startSuggestions));
+    endPointHero.addEventListener('input', () => handleAutocomplete(endPointHero, endSuggestions));
+
     document.addEventListener('click', (e) => {
-        if (!startInput.contains(e.target)) startResults.style.display = 'none';
-        if (!goalInput.contains(e.target)) goalResults.style.display = 'none';
-    });
-
-    let currentMode = 'driving';
-    modeButtonsContainer.addEventListener('click', (e) => {
-        if (e.target.tagName === 'BUTTON') {
-            modeButtonsContainer.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
-            e.target.classList.add('active');
-            currentMode = e.target.dataset.mode;
+        if (!e.target.closest('.input-group')) {
+            startSuggestions.style.display = 'none';
+            endSuggestions.style.display = 'none';
         }
     });
     
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(position => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            const locPosition = new kakao.maps.LatLng(lat, lng);
-            map.setCenter(locPosition);
-            
-            const geocoder = new kakao.maps.services.Geocoder();
-            geocoder.coord2Address(lng, lat, (result, status) => {
-                if (status === kakao.maps.services.Status.OK) {
-                    const address = result[0].road_address ? result[0].road_address.address_name : result[0].address.address_name;
-                    startInput.value = address;
-                    startInput.dataset.coords = `${lng},${lat}`;
+    // --- 함수 정의 ---
+    
+    function setupDateTimeDefaults() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        document.getElementById('arrival-date-hero').value = `${year}-${month}-${day}`;
+        document.getElementById('arrival-time-hero').value = `${hours}:${minutes}`;
+    }
+
+    function setupModeSelectors() {
+        const modeButtons = document.querySelectorAll('.mode-selector button');
+        modeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                modeButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                if (resultsPage.style.display !== 'none') {
+                    findAndDisplayRoutes(startPointHeader.value, endPointHeader.value);
                 }
             });
-        }, () => {
-            console.error("Could not get location information.");
         });
     }
 
-    searchButton.addEventListener('click', findAndDrawRoute);
-    goalInput.addEventListener('keydown', (e) => e.key === 'Enter' && findAndDrawRoute());
+    function setupSwitch(switchId) {
+        const switchContainer = document.getElementById(switchId);
+        if (!switchContainer) return;
+        const buttons = switchContainer.querySelectorAll('.switch-btn');
+        const input = switchContainer.closest('.input-group').querySelector('input');
+        buttons.forEach(button => {
+            button.addEventListener('click', () => {
+                buttons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                input.disabled = (button.dataset.value === 'off');
+            });
+        });
+    }
 
-    async function findAndDrawRoute() {
-        const startCoords = startInput.dataset.coords;
-        const goalCoords = goalInput.dataset.coords;
+    function handleAutocomplete(inputElement, suggestionsContainer) {
+        clearTimeout(debounceTimer);
+        const query = inputElement.value;
 
         if (!startCoords || !goalCoords) { 
             alert('출발지와 목적지를 모두 선택해주세요. (자동완성 목록에서 클릭)'); 
             return; 
         }
         
-        try {
-            const response = await fetch(`${proxyServerUrl}/api/directions?origin=${startCoords}&destination=${goalCoords}&mode=${currentMode}`);
-            const data = await response.json();
-
-            if (data.routes && data.routes.length > 0) {
-                const route = data.routes[0];
-                drawRoute(route.sections);
-                displayRouteSummary(route.summary);
-            } else {
-                alert('경로를 찾을 수 없습니다.');
+        debounceTimer = setTimeout(async () => {
+            try {
+                const response = await fetch(`${proxyServerUrl}/api/search?query=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                suggestionsContainer.innerHTML = '';
+                if (data.documents && data.documents.length > 0) {
+                    data.documents.forEach(place => {
+                        const item = document.createElement('div');
+                        item.className = 'suggestion-item';
+                        item.innerHTML = `
+                            <div class="place-name">${place.place_name}</div>
+                            <div class="address-name">${place.road_address_name || place.address_name}</div>
+                        `;
+                        item.addEventListener('click', () => {
+                            inputElement.value = place.place_name;
+                            suggestionsContainer.style.display = 'none';
+                        });
+                        suggestionsContainer.appendChild(item);
+                    });
+                    suggestionsContainer.style.display = 'block';
+                } else {
+                    suggestionsContainer.style.display = 'none';
+                }
+            } catch (error) {
+                console.error("장소 검색 제안 실패:", error);
+                suggestionsContainer.style.display = 'none';
             }
-        } catch (error) {
-            console.error('길찾기 과정에서 오류 발생:', error); 
-            alert('경로를 찾는 데 실패했습니다.'); 
+        }, 300);
+    }
+
+    function handleFormSubmit(event) {
+        event.preventDefault();
+        
+        const startPoint = startPointHero.value;
+        const endPoint = endPointHero.value;
+        
+        if (!startPoint || !endPoint) {
+            alert('출발지와 도착지를 모두 입력해주세요.');
+            return;
         }
+
+        startPointHeader.value = startPoint;
+        endPointHeader.value = endPoint;
+        arrivalDateHeader.value = document.getElementById('arrival-date-hero').value;
+        arrivalTimeHeader.value = document.getElementById('arrival-time-hero').value;
+
+        resultsPage.style.display = 'flex';
+        resultsPage.scrollIntoView({ behavior: 'smooth' });
+
+        if (!map) {
+            const mapContainer = document.getElementById('map');
+            const mapOption = {
+                center: new kakao.maps.LatLng(37.5665, 126.9780),
+                level: 5
+            };
+            map = new kakao.maps.Map(mapContainer, mapOption);
+        }
+        
+        findAndDisplayRoutes(startPoint, endPoint);
     }
     
-       // 📌 --- 경로 그리기 함수 (drawRoute) 전체 수정 ---
-    function drawRoute(sections) {
-        // 기존 지도 요소들 모두 제거
-        if (startMarker) startMarker.setMap(null);
-        if (goalMarker) goalMarker.setMap(null);
-        if (routePolyline) routePolyline.setMap(null);
-        if (routePolylineBorder) routePolylineBorder.setMap(null);
-        routeMarkers.forEach(marker => marker.setMap(null));
-        routeMarkers = [];
-
-        const pathPoints = [];
-        const bounds = new kakao.maps.LatLngBounds();
-
-        sections.forEach(section => {
-            section.roads.forEach(road => {
-                for (let i = 0; i < road.vertexes.length; i += 2) {
-                    const lng = road.vertexes[i];
-                    const lat = road.vertexes[i + 1];
-                    const point = new kakao.maps.LatLng(lat, lng);
-                    pathPoints.push(point);
-                    bounds.extend(point);
-                }
-            });
-        });
-
-        // 1. 테두리 폴리라인 생성
-        routePolylineBorder = new kakao.maps.Polyline({
-            path: pathPoints,
-            strokeWeight: 9,
-            strokeColor: '#00008B',
-            strokeOpacity: 0.8,
-            strokeStyle: 'solid',
-            zIndex: 1
-        });
-        routePolylineBorder.setMap(map);
-
-        // 2. 메인 폴리라인 생성
-        routePolyline = new kakao.maps.Polyline({
-            path: pathPoints,
-            strokeWeight: 5,
-            strokeColor: '#00BFFF',
-            strokeOpacity: 0.9,
-            strokeStyle: 'solid',
-            zIndex: 2
-        });
-        routePolyline.setMap(map);
-
-        // 경로 점 마커 (이전과 동일)
-        const markerImageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/point_blue.png';
-        const markerImageSize = new kakao.maps.Size(6, 6);
-        const markerImage = new kakao.maps.MarkerImage(markerImageSrc, markerImageSize);
-        const markerInterval = 10;
-        for (let i = 0; i < pathPoints.length; i += markerInterval) {
-            const pointMarker = new kakao.maps.Marker({
-                position: pathPoints[i],
-                image: markerImage,
-                map: map,
-                zIndex: 3
-            });
-            routeMarkers.push(pointMarker);
+    async function getCoordinates(query) {
+        try {
+            const response = await fetch(`${proxyServerUrl}/api/search?query=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            if (data.documents && data.documents.length > 0) {
+                const place = data.documents[0];
+                return {
+                    coords: `${place.x},${place.y}`,
+                    latlng: new kakao.maps.LatLng(place.y, place.x)
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error("장소 검색 실패:", error);
+            return null;
         }
-
-        // 📌 3. 출발/도착 마커를 기본 마커로 변경
-        const startPoint = pathPoints[0];
-        const goalPoint = pathPoints[pathPoints.length - 1];
-        
-        // 📌 커스텀 이미지 관련 코드를 모두 제거하고, 가장 기본적인 형태로 마커를 생성합니다.
-        startMarker = new kakao.maps.Marker({ position: startPoint, zIndex: 5 });
-        goalMarker = new kakao.maps.Marker({ position: goalPoint, zIndex: 5 });
-
-        startMarker.setMap(map);
-        goalMarker.setMap(map);
-
-        map.setBounds(bounds);
     }
 
-    function displayRouteSummary(summary) {
-        const duration = summary.duration; 
-        const distance = summary.distance; 
+    async function findAndDisplayRoutes(startQuery, endQuery) {
+        routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>최적의 경로들을 탐색 중입니다...</p></div>';
+        clearMap();
+        
+        const [startData, endData] = await Promise.all([
+            getCoordinates(startQuery),
+            getCoordinates(endQuery)
+        ]);
+        
+        if (!startData || !endData) {
+            alert('출발지 또는 도착지를 찾을 수 없습니다. 정확한 장소명을 입력해주세요.');
+            routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>장소를 찾지 못해 경로 탐색에 실패했습니다.</p></div>';
+            return;
+        }
+        
+        startMarker = new kakao.maps.Marker({ position: startData.latlng, map: map });
+        endMarker = new kakao.maps.Marker({ position: endData.latlng, map: map });
 
-        const hours = Math.floor(duration / 3600);
-        const minutes = Math.floor((duration % 3600) / 60);
-        const distanceKm = (distance / 1000).toFixed(1);
+        const startCoords = startData.coords;
+        const endCoords = endData.coords;
+        const currentMode = document.querySelector('.mode-selector button.active').id.includes('car') ? 'driving' : 'walking';
+        
+        if (currentMode === 'walking') {
+            routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>도보 길찾기는 현재 지원되지 않습니다.</p></div>';
+        } else {
+            // [수정] '시간 우선 경로'를 추가하여 총 4개의 옵션을 요청
+            const priorities = [
+                { code: 'RECOMMEND', title: '최적 경로' },
+                { code: 'TIME', title: '시간 우선 경로' },
+                { code: 'DISTANCE', title: '최단 경로' },
+                { code: 'FREE', title: '무료 경로' }
+            ];
+            try {
+                const requests = priorities.map(p =>
+                    fetch(`${proxyServerUrl}/api/directions?origin=${startCoords}&destination=${endCoords}&priority=${p.code}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.routes && data.routes.length > 0) {
+                            const bestRoute = data.routes[0];
+                            bestRoute.customTitle = p.title;
+                            return bestRoute;
+                        }
+                        return null;
+                    })
+                );
+                const results = await Promise.all(requests);
+                const validRoutes = results.filter(route => route !== null);
 
-        let timeHtml = '';
-        if (hours > 0) timeHtml += `${hours}시간 `;
-        timeHtml += `${minutes}분`;
+                if (validRoutes.length > 0) {
+                    currentRoutesData = validRoutes;
+                    displayRouteList(currentRoutesData);
+                    drawAllRoutes(currentRoutesData);
+                    routeSidebar.querySelector('.route-card')?.classList.add('active');
+                } else {
+                    routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>경로를 찾을 수 없습니다.</p></div>';
+                }
+            } catch (error) {
+                console.error('길찾기 오류:', error);
+                routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>경로 탐색에 실패했습니다.</p></div>';
+            }
+        }
+    }
 
-        routeSummaryPanel.innerHTML = `
-            <div class="total-time" style="color: #3C1E1E;">${timeHtml}</div>
-            <div class="total-distance">총 거리 ${distanceKm}km</div>
+    function displayRouteList(routes) {
+        routeSidebar.innerHTML = '';
+        routes.forEach((route, index) => {
+            const card = createRouteCard(route, index);
+            routeSidebar.appendChild(card);
+        });
+    }
+
+    function createRouteCard(route, index) {
+        const card = document.createElement('div');
+        card.className = 'route-card';
+        card.dataset.index = index;
+        
+        const summary = route.summary;
+        const durationInMinutes = Math.floor(summary.duration / 60);
+        const distanceInKm = (summary.distance / 1000).toFixed(1);
+        const fare = summary.fare.taxi.toLocaleString();
+
+        card.innerHTML = `
+            <div class="route-card-header">${route.customTitle}</div>
+            <div class="route-card-body">
+                <span class="duration">${durationInMinutes}분</span>
+                <span class="meta-info">${distanceInKm}km | 택시비 약 ${fare}원</span>
+            </div>
         `;
-        routeSummaryPanel.style.display = 'block';
+
+        card.addEventListener('click', () => {
+            routeSidebar.querySelectorAll('.route-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            setActiveRoute(index);
+        });
+        return card;
+    }
+
+    function drawAllRoutes(routes) {
+        const bounds = new kakao.maps.LatLngBounds();
+        routes.forEach((route, index) => {
+            const pathPoints = [];
+            route.sections.forEach(section => {
+                section.roads.forEach(road => {
+                    for (let i = 0; i < road.vertexes.length; i += 2) {
+                        const latlng = new kakao.maps.LatLng(road.vertexes[i + 1], road.vertexes[i]);
+                        pathPoints.push(latlng);
+                        bounds.extend(latlng);
+                    }
+                });
+            });
+
+            const isActive = index === 0;
+            const polyline = new kakao.maps.Polyline({
+                path: pathPoints,
+                strokeWeight: isActive ? 8 : 6,
+                strokeColor: isActive ? '#1B4373' : '#888888',
+                strokeOpacity: isActive ? 0.9 : 0.5,
+                zIndex: isActive ? 3 : 1
+            });
+            polyline.setMap(map);
+            routePolylines.push(polyline);
+        });
+        map.setBounds(bounds);
+    }
+    
+    function setActiveRoute(selectedIndex) {
+        routePolylines.forEach((polyline, index) => {
+            const isActive = index === selectedIndex;
+            polyline.setOptions({
+                strokeWeight: isActive ? 8 : 6,
+                strokeColor: isActive ? '#1B4373' : '#888888',
+                strokeOpacity: isActive ? 0.9 : 0.5,
+                zIndex: isActive ? 3 : 1
+            });
+        });
+    }
+    
+    function clearMap() {
+        if (startMarker) startMarker.setMap(null);
+        if (endMarker) endMarker.setMap(null);
+        routePolylines.forEach(p => p.setMap(null));
+        routePolylines = [];
     }
 });
