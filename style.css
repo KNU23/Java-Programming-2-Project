@@ -5,146 +5,421 @@
     box-sizing: border-box;
 }
 
-body, html {
-    width: 100%;
+/* 전체 페이지 스타일 */
+html, body {
     height: 100%;
-    font-family: 'Malgun Gothic', sans-serif;
-    overflow: hidden; /* 스크롤 방지 */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: #f4f7f9; /* 하단 영역의 밝은 회색 배경 */
+    scroll-behavior: smooth;
 }
 
-/* 전체 앱 레이아웃 */
-#app-container {
+/* 상단 배너 영역 */
+.hero-section {
+    background-color: #1B4373; /* 요청하신 단일 파란색 배경 */
+    color: white;
+    min-height: 50vh; /* 최소 높이 설정 */
     display: flex;
-    width: 100%;
-    height: 100%;
+    justify-content: center;
+    align-items: center;
+    padding: 100px 50px 50px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    position: relative;
 }
 
-/* 사이드바 스타일 */
-#sidebar {
-    width: 380px;
-    height: 100%;
-    border-right: 1px solid #ddd;
+/* 최상단 헤더 스타일 */
+.top-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 25px 50px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.corporate-logo {
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    opacity: 0.9;
+}
+
+.login-button-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: opacity 0.2s;
+}
+.login-button-top:hover {
+    opacity: 1;
+}
+.login-button-top i {
+    font-size: 1.2rem;
+}
+
+
+/* 배너 안의 콘텐츠를 감싸는 컨테이너 */
+.content-wrapper {
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* 메인 콘텐츠 헤더 */
+.app-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 50px;
+}
+
+/* 메인 슬로건 텍스트 스타일 */
+.logo-text {
+    font-size: 2rem; 
+    font-weight: 600; 
+    letter-spacing: normal; 
+    color: white; 
+    text-shadow: 1px 1px 3px rgba(0,0,0,0.3); 
+}
+
+/* 이동 수단 선택 버튼 */
+.mode-selector {
+    display: flex;
+    gap: 10px;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 8px;
+    border-radius: 30px;
+}
+
+.mode-selector button {
+    background-color: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    padding: 10px 20px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.mode-selector button.active,
+.mode-selector button:hover {
+    background-color: white;
+    color: #1B4373;
+}
+
+.search-form {
+    display: flex; 
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+    padding: 12px;
+    gap: 10px;
+    align-items: center;
+}
+
+/* 각 입력 필드 그룹 */
+.input-group {
+    flex: 1;
+    padding: 10px 20px;
+    position: relative;
+    border-right: 1px solid #f0f0f0;
     display: flex;
     flex-direction: column;
-    background-color: #fff;
-    z-index: 10;
+    justify-content: center;
+}
+.input-group:last-of-type {
+    border-right: none;
 }
 
-.sidebar-header {
-    padding: 15px;
-    border-bottom: 1px solid #eee;
+.input-group.has-switch {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
 }
 
-.search-box {
-    position: relative;
-    display: flex;
-    border: 2px solid #2DB400; /* 네이버 그린 색상 */
-    border-radius: 4px;
+.input-field-wrapper {
+     flex-grow: 1;
 }
 
-.search-box input {
-    flex-grow: 1;
+.input-group label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #888;
+    margin-bottom: 5px;
+}
+
+.input-group input {
+    width: 100%;
     border: none;
-    padding: 12px;
-    font-size: 16px;
     outline: none;
+    font-size: 1.1rem;
+    color: #333;
+    background-color: transparent;
+    position: relative;
+    z-index: 2;
 }
 
-.category-filters button {
-    border: 1px solid #ddd;
-    background-color: #fff;
-    padding: 8px 12px;
-    border-radius: 20px;
-    margin-right: 8px;
-    cursor: pointer;
+::placeholder {
+    color: #ccc;
 }
 
-.category-filters button.active {
-    background-color: #2DB400;
-    color: white;
-    border-color: #2DB400;
-}
-
-/* 정보 패널 */
-.info-panel {
-    flex-grow: 1;
-    overflow-y: auto; /* 내용 많아지면 스크롤 */
-    padding: 15px;
-}
-
-/* 지도 스타일 */
-#map {
-    width: calc(100% - 380px); /* 전체 너비에서 사이드바 너비 빼기 */
-    height: 100%;
-}
-
-/* 마커 스타일 추가 */
-.marker {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    border: 3px solid #fff;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-}
-.marker.start {
-    background-color: #007bff; /* 출발지: 파란색 */
-}
-.marker.goal {
-    background-color: #dc3545; /* 목적지: 빨간색 */
-}
-
-/* 자동완성 결과 목록 스타일 */
-.autocomplete-results {
-    display: none; /* 평소에는 숨김 */
+/* --- [신규] 검색어 제안 목록 스타일 --- */
+.suggestions-list {
+    display: none; /* 기본적으로 숨김 */
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
-    background-color: #fff;
-    border: 1px solid #ddd;
+    background-color: white;
+    border: 1px solid #eee;
     border-top: none;
-    z-index: 1000;
-    max-height: 200px;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    max-height: 250px;
     overflow-y: auto;
+    z-index: 1000;
 }
 
-.autocomplete-item {
-    padding: 10px 15px;
+.suggestion-item {
+    padding: 12px 20px;
+    font-size: 0.95rem;
+    color: #333;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    border-bottom: 1px solid #f5f5f5;
+}
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+.suggestion-item:hover {
+    background-color: #f5f5f5;
+}
+.suggestion-item .place-name {
+    font-weight: 500;
+}
+.suggestion-item .address-name {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 2px;
+}
+/* --- 스타일 끝 --- */
+
+
+/* 날짜/시간 입력창의 커서 모양 변경 */
+input[type="date"], input[type="time"] {
     cursor: pointer;
 }
 
-.autocomplete-item:hover {
-    background-color: #f5f5f5;
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
 }
 
-.item-title {
-    font-weight: bold;
-    font-size: 15px;
+/* On/Off 스위치 스타일 */
+.on-off-switch {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    overflow: hidden;
+    height: 100%;
 }
 
-.item-address {
-    font-size: 13px;
-    color: #888;
-    margin-top: 3px;
-}
-
-/* 경로 정보 요약 패널 스타일 */
-#route-summary {
-    padding: 15px;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+.switch-btn {
     background-color: #f9f9f9;
-    display: none; /* 평소에는 숨김 */
-}
-
-#route-summary .total-time {
-    font-size: 24px;
+    border: none;
+    padding: 4px 10px;
+    cursor: pointer;
+    color: #aaa;
+    font-size: 0.7rem;
     font-weight: bold;
-    color: #2DB400;
+    transition: all 0.2s ease;
+    flex-grow: 1;
 }
 
-#route-summary .total-distance {
-    font-size: 16px;
-    color: #555;
-    margin-top: 5px;
+.switch-btn.active {
+    background-color: #1B4373;
+    color: white;
 }
+
+/* 검색 버튼 */
+.search-button {
+    background-color: #1B4373;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0 40px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    cursor: pointer;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+.search-button:hover {
+    background-color: #123456;
+}
+
+
+#results-page {
+    width: 100%;
+    height: 100vh; /* 화면 전체 높이 사용 */
+    display: flex; 
+    flex-direction: column;
+}
+
+#results-header {
+    background-color: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 15px 30px;
+    z-index: 100;
+}
+
+.results-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+.corporate-logo-header {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1B4373;
+}
+
+.search-form-header {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.input-group-header {
+    display: flex;
+    align-items: center;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+.input-group-header label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #888;
+    margin-right: 8px;
+}
+
+.input-group-header input {
+    border: none;
+    outline: none;
+    font-size: 0.9rem;
+}
+input[type="date"], input[type="time"] {
+    min-width: 120px;
+}
+
+#research-button {
+    background-color: #1B4373;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-size: 0.9rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.login-button-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #555;
+}
+.login-button-header:hover {
+    color: #1B4373;
+}
+.login-button-header i {
+    font-size: 1.2rem;
+}
+
+#results-content {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden; /* 스크롤바 방지 */
+}
+
+#route-sidebar {
+    width: 380px;
+    background-color: #ffffff;
+    border-right: 1px solid #e0e0e0;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+.sidebar-content {
+    padding: 30px;
+}
+
+#map-container {
+    flex-grow: 1;
+}
+
+#map {
+    width: 100%;
+    height: 100%;
+    background-color: #e0e0e0; /* 지도 로딩 전 배경색 */
+}
+
+/* --- [신규] 경로 카드 스타일 --- */
+.route-card {
+    border: 1px solid transparent;
+    border-bottom: 1px solid #eee;
+    padding: 20px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-left 0.2s;
+}
+.route-card:hover {
+    background-color: #f9f9f9;
+}
+.route-card.active {
+    background-color: #f5f8ff;
+    border-left: 4px solid #1B4373;
+}
+.route-card-header {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1B4373;
+    margin-bottom: 10px;
+}
+.route-card-body {
+    display: flex;
+    align-items: baseline;
+    gap: 15px;
+}
+.route-card-body .duration {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #333;
+}
+.route-card-body .meta-info {
+    font-size: 0.9rem;
+    color: #666;
+}
+/* --- 스타일 끝 --- */
