@@ -23,7 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let map = null;
     let startMarker = null, endMarker = null;
     let routePolylines = [];
-    let currentRoutesData = [];
+    let currentRoutesData = []; // 경로 데이터 저장
+    let currentMode = 'driving'; // 현재 길찾기 모드 저장
     let debounceTimer;
 
     // --- 초기 UI 설정 ---
@@ -198,42 +199,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
         startMarker = new Tmapv2.Marker({
             position: new Tmapv2.LatLng(startY, startX),
-            map: map
+            map: map,
+            icon: "http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_s.png"
         });
         endMarker = new Tmapv2.Marker({
             position: new Tmapv2.LatLng(endY, endX),
-            map: map
+            map: map,
+            icon: "http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_e.png"
         });
-
+        
         const activeModeButton = document.querySelector('.mode-selector button.active');
-        let currentMode = 'driving';
         if (activeModeButton.id.includes('walk')) {
             currentMode = 'walking';
-        } else if (activeModeButton.id.includes('bike')) {
-            routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>자전거 길찾기는 현재 지원되지 않습니다.</p></div>';
+        } else if (activeModeButton.id.includes('transit')) {
+            currentMode = 'transit';
+        } else if (activeModeButton.id.includes('car')) {
+            currentMode = 'driving';
+        } else {
+             routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>자전거 길찾기는 현재 지원되지 않습니다.</p></div>';
             return;
         }
 
         try {
             const response = await fetch(`${proxyServerUrl}/api/directions`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    startX, startY, endX, endY, mode: currentMode
-                }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ startX, startY, endX, endY, mode: currentMode }),
             });
 
             const data = await response.json();
-
-            if (data.features && data.features.length > 0) {
-                currentRoutesData = data.features;
-                displayRouteList(currentRoutesData, currentMode);
-                drawAllRoutes(currentRoutesData);
-                routeSidebar.querySelector('.route-card')?.classList.add('active');
-            } else {
-                routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>경로를 찾을 수 없습니다.</p></div>';
+            
+            if (currentMode === 'transit') {
+                if (data.metaData && data.metaData.plan && data.metaData.plan.itineraries) {
+                    currentRoutesData = data.metaData.plan.itineraries;
+                    displayTransitRouteList(currentRoutesData);
+                    if (currentRoutesData.length > 0) {
+                        drawTransitRoute(currentRoutesData[0]);
+                        routeSidebar.querySelector('.route-card')?.classList.add('active');
+                    }
+                } else {
+                    routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>대중교통 경로를 찾을 수 없습니다.</p></div>';
+                }
+            } else { // 자동차 또는 도보
+                if (data.features && data.features.length > 0) {
+                    currentRoutesData = data.features;
+                    displayRouteList(currentRoutesData, currentMode);
+                    drawDrivingWalkingRoute(currentRoutesData);
+                    routeSidebar.querySelector('.route-card')?.classList.add('active');
+                } else {
+                    routeSidebar.innerHTML = '<div class="sidebar-content"><h2>경로 정보</h2><p>경로를 찾을 수 없습니다.</p></div>';
+                }
             }
         } catch (error) {
             console.error('길찾기 오류:', error);
@@ -243,38 +258,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function displayRouteList(features, mode) {
         routeSidebar.innerHTML = '';
-        // 경로 요약 정보는 보통 첫 번째 feature에 들어있습니다.
         const summaryFeature = features.find(f => f.properties.totalDistance);
         if (summaryFeature) {
-            const card = createRouteCard(summaryFeature, 0, mode);
+            const card = createRouteCard(summaryFeature, 0, mode, features);
             routeSidebar.appendChild(card);
         }
     }
 
-    function createRouteCard(feature, index, mode) {
+    function createRouteCard(feature, index, mode, allFeatures) {
         const card = document.createElement('div');
         card.className = 'route-card';
         card.dataset.index = index;
-
+    
         const props = feature.properties;
-        const durationInMinutes = Math.floor(props.totalTime / 60);
+        const durationInMinutes = Math.round(props.totalTime / 60);
         const distanceInKm = (props.totalDistance / 1000).toFixed(1);
-
+    
         let title = mode === 'driving' ? '자동차 경로' : '도보 경로';
         let metaInfoHtml = `${distanceInKm}km`;
         if (mode === 'driving' && props.taxiFare) {
             const fare = props.taxiFare.toLocaleString();
             metaInfoHtml += ` | 택시비 약 ${fare}원`;
         }
-
+    
         card.innerHTML = `
             <div class="route-card-header">${title}</div>
             <div class="route-card-body">
                 <span class="duration">${durationInMinutes}분</span>
                 <span class="meta-info">${metaInfoHtml}</span>
             </div>
+            <div class="route-steps">
+                ${createDetailedSteps(allFeatures)}
+            </div>
         `;
-
+    
         card.addEventListener('click', () => {
             routeSidebar.querySelectorAll('.route-card').forEach(c => c.classList.remove('active'));
             card.classList.add('active');
@@ -282,34 +299,71 @@ document.addEventListener('DOMContentLoaded', () => {
         return card;
     }
 
-    function drawAllRoutes(features) {
+    function displayTransitRouteList(itineraries) {
+        routeSidebar.innerHTML = '';
+        itineraries.forEach((itinerary, index) => {
+            const card = createTransitRouteCard(itinerary, index);
+            routeSidebar.appendChild(card);
+        });
+    }
+
+    function createTransitRouteCard(itinerary, index) {
+        const card = document.createElement('div');
+        card.className = 'route-card';
+        card.dataset.index = index;
+    
+        const durationInMinutes = Math.round(itinerary.totalTime / 60);
+        const fare = itinerary.fare.regular.totalFare.toLocaleString();
+    
+        let legsHtml = '<div class="route-legs">';
+        itinerary.legs.forEach((leg, legIndex) => {
+            if (leg.mode === 'WALK') {
+                legsHtml += `<i class="fa-solid fa-person-walking"></i>`;
+            } else if (leg.mode === 'BUS') {
+                legsHtml += `<span class="bus-route">${leg.route}</span>`;
+            } else if (leg.mode === 'SUBWAY') {
+                legsHtml += `<span class="subway-route" style="background-color:#${leg.routeColor};">${leg.route}</span>`;
+            }
+            if (legIndex < itinerary.legs.length - 1) {
+                legsHtml += ` <i class="fa-solid fa-chevron-right"></i> `;
+            }
+        });
+        legsHtml += '</div>';
+    
+        card.innerHTML = `
+            <div class="route-card-body">
+                <span class="duration">${durationInMinutes}분</span>
+                <span class="meta-info"> | ${fare}원</span>
+            </div>
+            ${legsHtml}
+        `;
+    
+        card.addEventListener('click', () => {
+            routeSidebar.querySelectorAll('.route-card').forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+            drawTransitRoute(currentRoutesData[index]);
+        });
+        return card;
+    }
+
+    function drawDrivingWalkingRoute(features) {
+        clearMapOverlays();
         const bounds = new Tmapv2.LatLngBounds();
 
         features.forEach((feature) => {
-            const geometry = feature.geometry;
-            const pathPoints = [];
-
-            // 타입이 LineString 또는 MultiLineString인 경우에만 경로를 그립니다.
-            if (geometry.type === "LineString") {
-                for (const coord of geometry.coordinates) {
+            if (feature.geometry.type === "LineString" || feature.geometry.type === "MultiLineString") {
+                const pathPoints = [];
+                const coordinates = (feature.geometry.type === "LineString") ? feature.geometry.coordinates : [].concat.apply([], feature.geometry.coordinates);
+                
+                coordinates.forEach(coord => {
                     const latlng = new Tmapv2.LatLng(coord[1], coord[0]);
                     pathPoints.push(latlng);
                     bounds.extend(latlng);
-                }
-            } else if (geometry.type === "MultiLineString") {
-                for (const line of geometry.coordinates) {
-                    for (const coord of line) {
-                        const latlng = new Tmapv2.LatLng(coord[1], coord[0]);
-                        pathPoints.push(latlng);
-                        bounds.extend(latlng);
-                    }
-                }
-            }
-
-            if (pathPoints.length > 0) {
-                 const polyline = new Tmapv2.Polyline({
+                });
+                 
+                const polyline = new Tmapv2.Polyline({
                     path: pathPoints,
-                    strokeColor: "#1B4373",
+                    strokeColor: "#DD0000",
                     strokeWeight: 6,
                     map: map
                 });
@@ -326,10 +380,102 @@ document.addEventListener('DOMContentLoaded', () => {
             map.fitBounds(bounds);
         }
     }
+    
+    // --- ⭐️ 수정된 함수 시작 ---
+    function drawTransitRoute(itinerary) {
+        clearMapOverlays();
+        const bounds = new Tmapv2.LatLngBounds();
+    
+        itinerary.legs.forEach(leg => {
+            const pathPoints = [];
+            let strokeColor = "#1B4373"; // 기본 파란색 (버스)
+    
+            // 버스/지하철처럼 passShape가 있는 경우
+            if (leg.passShape && leg.passShape.linestring) {
+                leg.passShape.linestring.split(' ').forEach(pointStr => {
+                    const [lon, lat] = pointStr.split(',');
+                    if (lon && lat) {
+                        const latlng = new Tmapv2.LatLng(parseFloat(lat), parseFloat(lon));
+                        pathPoints.push(latlng);
+                        bounds.extend(latlng);
+                    }
+                });
+    
+                if (leg.mode === 'SUBWAY') {
+                    strokeColor = `#${leg.routeColor}`;
+                }
+            } 
+            // 도보(WALK)처럼 passShape가 없는 경우, 시작점과 끝점을 연결
+            else if (leg.mode === 'WALK') {
+                strokeColor = "#767676"; // 회색
+                const startPoint = new Tmapv2.LatLng(leg.start.lat, leg.start.lon);
+                const endPoint = new Tmapv2.LatLng(leg.end.lat, leg.end.lon);
+                pathPoints.push(startPoint);
+                pathPoints.push(endPoint);
+                bounds.extend(startPoint);
+                bounds.extend(endPoint);
+            }
+    
+            // 경로 데이터가 있을 경우에만 지도에 선을 그립니다.
+            if (pathPoints.length > 0) {
+                const polyline = new Tmapv2.Polyline({
+                    path: pathPoints,
+                    strokeColor: strokeColor,
+                    strokeWeight: 8,
+                    map: map
+                });
+                routePolylines.push(polyline);
+            }
+        });
+    
+        if (startMarker && endMarker) {
+            bounds.extend(startMarker.getPosition());
+            bounds.extend(endMarker.getPosition());
+        }
+   
+        if (bounds.getNorthEast()) {
+            map.fitBounds(bounds);
+        }
+    }
+    // --- ⭐️ 수정된 함수 끝 ---
+
+    function createDetailedSteps(features) {
+        let stepsHtml = '';
+        features.forEach(feature => {
+            if (feature.geometry.type === 'Point' && feature.properties.description) {
+                const props = feature.properties;
+                const instruction = props.description.replace(/입니다\.$/, '');
+                
+                stepsHtml += `
+                    <div class="step">
+                        <span class="step-icon">${getTurnTypeIcon(props.turnType)}</span>
+                        <span class="step-instruction">${instruction}</span>
+                    </div>
+                `;
+            }
+        });
+        return stepsHtml;
+    }
+    
+    function getTurnTypeIcon(turnType) {
+        switch (turnType) {
+            case 11: return '<i class="fa-solid fa-arrow-up"></i>';
+            case 12: return '<i class="fa-solid fa-arrow-left"></i>';
+            case 13: return '<i class="fa-solid fa-arrow-right"></i>';
+            case 14: return 'U';
+            case 16: case 18: return '<i class="fa-solid fa-arrow-down-left"></i>';
+            case 17: case 19: return '<i class="fa-solid fa-arrow-up-right"></i>';
+            default: return '●';
+        }
+    }
 
     function clearMap() {
         if (startMarker) startMarker.setMap(null);
         if (endMarker) endMarker.setMap(null);
+        clearMapOverlays();
+    }
+    
+    function clearMapOverlays() {
         routePolylines.forEach(p => p.setMap(null));
         routePolylines = [];
     }

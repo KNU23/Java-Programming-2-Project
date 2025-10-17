@@ -9,15 +9,15 @@
 html, body {
     height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    background-color: #f4f7f9; /* 하단 영역의 밝은 회색 배경 */
+    background-color: #f4f7f9;
     scroll-behavior: smooth;
 }
 
 /* 상단 배너 영역 */
 .hero-section {
-    background-color: #1B4373; /* 요청하신 단일 파란색 배경 */
+    background-color: #1B4373;
     color: white;
-    min-height: 50vh; /* 최소 높이 설정 */
+    min-height: 50vh;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -61,15 +61,12 @@ html, body {
     font-size: 1.2rem;
 }
 
-
-/* 배너 안의 콘텐츠를 감싸는 컨테이너 */
 .content-wrapper {
     max-width: 1200px;
     width: 100%;
     margin: 0 auto;
 }
 
-/* 메인 콘텐츠 헤더 */
 .app-header {
     width: 100%;
     display: flex;
@@ -78,16 +75,13 @@ html, body {
     margin-bottom: 50px;
 }
 
-/* 메인 슬로건 텍스트 스타일 */
 .logo-text {
     font-size: 2rem; 
     font-weight: 600; 
-    letter-spacing: normal; 
     color: white; 
     text-shadow: 1px 1px 3px rgba(0,0,0,0.3); 
 }
 
-/* 이동 수단 선택 버튼 */
 .mode-selector {
     display: flex;
     gap: 10px;
@@ -127,7 +121,6 @@ html, body {
     align-items: center;
 }
 
-/* 각 입력 필드 그룹 */
 .input-group {
     flex: 1;
     padding: 10px 20px;
@@ -174,9 +167,8 @@ html, body {
     color: #ccc;
 }
 
-/* --- [신규] 검색어 제안 목록 스타일 --- */
 .suggestions-list {
-    display: none; /* 기본적으로 숨김 */
+    display: none;
     position: absolute;
     top: 100%;
     left: 0;
@@ -213,10 +205,7 @@ html, body {
     color: #888;
     margin-top: 2px;
 }
-/* --- 스타일 끝 --- */
 
-
-/* 날짜/시간 입력창의 커서 모양 변경 */
 input[type="date"], input[type="time"] {
     cursor: pointer;
 }
@@ -227,7 +216,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     opacity: 0.6;
 }
 
-/* On/Off 스위치 스타일 */
 .on-off-switch {
     display: flex;
     flex-direction: column;
@@ -254,7 +242,6 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     color: white;
 }
 
-/* 검색 버튼 */
 .search-button {
     background-color: #1B4373;
     color: white;
@@ -274,10 +261,9 @@ input[type="time"]::-webkit-calendar-picker-indicator {
     background-color: #123456;
 }
 
-
 #results-page {
     width: 100%;
-    height: 100vh; /* 화면 전체 높이 사용 */
+    height: 100vh;
     display: flex; 
     flex-direction: column;
 }
@@ -362,7 +348,7 @@ input[type="date"], input[type="time"] {
 #results-content {
     display: flex;
     flex-grow: 1;
-    overflow: hidden; /* 스크롤바 방지 */
+    overflow: hidden;
 }
 
 #route-sidebar {
@@ -384,12 +370,10 @@ input[type="date"], input[type="time"] {
 #map {
     width: 100%;
     height: 100%;
-    background-color: #e0e0e0; /* 지도 로딩 전 배경색 */
+    background-color: #e0e0e0;
 }
 
-/* --- [신규] 경로 카드 스타일 --- */
 .route-card {
-    border: 1px solid transparent;
     border-bottom: 1px solid #eee;
     padding: 20px;
     cursor: pointer;
@@ -412,6 +396,7 @@ input[type="date"], input[type="time"] {
     display: flex;
     align-items: baseline;
     gap: 15px;
+    margin-bottom: 15px;
 }
 .route-card-body .duration {
     font-size: 1.5rem;
@@ -421,5 +406,63 @@ input[type="date"], input[type="time"] {
 .route-card-body .meta-info {
     font-size: 0.9rem;
     color: #666;
+}
+
+.route-steps {
+    margin-top: 20px;
+    border-top: 1px solid #f0f0f0;
+    padding-top: 15px;
+}
+.step {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f9f9f9;
+}
+.step:last-child {
+    border-bottom: none;
+}
+.step-icon {
+    font-size: 1.2rem;
+    color: #1B4373;
+    width: 30px;
+    text-align: center;
+    flex-shrink: 0;
+    margin-right: 15px;
+}
+.step-instruction {
+    font-size: 0.95rem;
+    color: #333;
+}
+
+/* --- [신규] 대중교통 경로 스타일 --- */
+.route-legs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.route-legs .fa-person-walking {
+    font-size: 1.2rem;
+    color: #555;
+}
+.route-legs .fa-chevron-right {
+    font-size: 0.7rem;
+    color: #aaa;
+}
+.bus-route, .subway-route {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+.bus-route {
+    background-color: #f0f0f0;
+    color: #333;
+    border: 1px solid #ddd;
+}
+.subway-route {
+    color: white;
+    border: 1px solid rgba(0,0,0,0.1);
 }
 /* --- 스타일 끝 --- */
