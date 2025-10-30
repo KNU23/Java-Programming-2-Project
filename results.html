@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>경로 검색 결과</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="results.css">
+</head>
+<body class="results-body">
+
+    <header class="results-header">
+        <a href="index.html" class="corporate-logo">javaproject</a>
+        <form class="search-form-header" id="results-form" action="results.html" method="GET">
+            <div class="input-group">
+                <label for="start-point-header">출발</label>
+                <input type="text" id="start-point-header" name="start" required>
+            </div>
+            <div class="input-group">
+                <label for="end-point-header">도착</label>
+                <input type="text" id="end-point-header" name="end" required>
+            </div>
+            <div class="input-group has-switch">
+                <div class="input-field-wrapper">
+                    <label for="arrival-date-header">날짜</label>
+                    <input type="date" id="arrival-date-header" name="date">
+                </div>
+                <div class="on-off-switch" id="date-switch-header">
+                    <button type="button" class="switch-btn active" data-value="on">on</button>
+                    <button type="button" class="switch-btn" data-value="off">off</button>
+                </div>
+            </div>
+            <div class="input-group has-switch">
+                <div class="input-field-wrapper">
+                    <label for="arrival-time-header">도착 시간</label>
+                    <input type="time" id="arrival-time-header" name="time">
+                </div>
+                <div class="on-off-switch" id="time-switch-header">
+                    <button type="button" class="switch-btn active" data-value="on">on</button>
+                    <button type="button" class="switch-btn" data-value="off">off</button>
+                </div>
+            </div>
+            <input type="hidden" id="transport-mode-header" name="mode">
+            <button type="submit" id="research-button">다시 검색</button>
+        </form>
+        <div class="login-button-top">
+            <i class="fa-solid fa-circle-user"></i>
+            <span>로그인</span>
+        </div>
+    </header>
+
+    <div class="results-container">
+        <main class="results-content">
+            <aside id="route-sidebar">
+                <nav class="mode-selector-sidebar">
+                    <button class="transport-mode" data-mode="DRIVING"><i class="fa-solid fa-car"></i> 자동차</button>
+                    <button class="transport-mode" data-mode="TRANSIT"><i class="fa-solid fa-bus"></i> 대중교통</button>
+                    <button class="transport-mode" data-mode="WALKING"><i class="fa-solid fa-person-walking"></i> 도보</button>
+                    <button class="transport-mode" data-mode="BICYCLING"><i class="fa-solid fa-bicycle"></i> 자전거</button>
+                </nav>
+                <div id="route-details-container"></div>
+            </aside>
+            <div id="map-container"><div id="map"></div></div>
+        </main>
+    </div>
+
+
+
+    <script src="results.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAmuWtQHD2IKFQKUH_dMT7GzUd6DMA7fPM&libraries=places,routes&callback=initMap" async></script>
+</body>
+</html>

@@ -1,80 +1,85 @@
 const express = require('express');
+const path = require('path');
 const axios = require('axios');
-const cors = require('cors');
+require('dotenv').config();
 
-// --- ⚠️ API 키 설정 영역 ---
-const TMAP_APP_KEY = 'YIljWEDBQc3wrrc5uObyqa5LmTUvnpcQ7pVB9lDQ'; // 여기에 발급받은 TMAP 앱 키를 입력하세요.
+// [확인용 로그] .env에서 API 키를 제대로 읽었는지 확인
+console.log("TMAP API Key Loaded:", process.env.TMAP_API_KEY);
+console.log("ORS API Key Loaded:", process.env.ORS_API_KEY);
 
 const app = express();
 const port = 3000;
 
-app.use(cors());
-app.use(express.json());
+app.use(express.static(path.join(__dirname)));
 
-// --- TMAP API 프록시 ---
-
-// [장소 검색 API]
-app.get('/api/search', async (req, res) => {
+// TMAP 도보 길찾기 API
+app.get('/api/directions', async (req, res) => {
+    console.log('/api/directions (WALKING) route hit with query:', req.query);
+    const { start, end } = req.query;
+    if (!start || !end) return res.status(400).json({ error: '출발지, 도착지 정보가 필요합니다.' });
+    const [startX, startY] = start.split(',');
+    const [endX, endY] = end.split(',');
     try {
-        const query = req.query.query;
-        if (!query) {
-            return res.status(400).json({ message: '검색어가 필요합니다.' });
-        }
-        const apiUrl = `https://apis.openapi.sk.com/tmap/pois?version=1&format=json&searchKeyword=${encodeURIComponent(query)}&count=10`;
-        const response = await axios.get(apiUrl, { headers: { 'appKey': TMAP_APP_KEY } });
-
-        // --- ⭐️ 수정된 부분 시작 ---
-        // TMAP API 응답에서 searchPoiInfo나 pois 객체가 없는 경우(검색 결과가 없는 경우)를 확인합니다.
-        if (response.data.searchPoiInfo && response.data.searchPoiInfo.pois) {
-            const documents = response.data.searchPoiInfo.pois.poi.map(item => ({
-                place_name: item.name,
-                road_address_name: item.newAddressList.newAddress[0].fullAddressRoad,
-                address_name: `${item.upperAddrName} ${item.middleAddrName} ${item.lowerAddrName}`,
-                x: item.noorLon,
-                y: item.noorLat
-            }));
-            res.json({ documents });
-        } else {
-            // 검색 결과가 없으면 빈 배열을 클라이언트에 보냅니다.
-            res.json({ documents: [] });
-        }
-        // --- ⭐️ 수정된 부분 끝 ---
-
+        const apiUrl = 'https://apis.openapi.sk.com/tmap/routes/pedestrian';
+        const payload = { startX, startY, endX, endY, reqCoordType: 'WGS84GEO', resCoordType: 'WGS84GEO', startName: "출발지", endName: "도착지" };
+        const headers = { 'Content-Type': 'application/json', 'appKey': process.env.TMAP_API_KEY };
+        const response = await axios.post(apiUrl, payload, { headers });
+        console.log('TMAP 도보 경로 API 호출 성공');
+        return res.json(response.data);
     } catch (error) {
-        console.error("!!! TMAP Search 프록시 에러:", error.response?.data || error.message);
-        res.status(500).json({ message: 'TMAP 장소 검색 API 프록시 실패' });
+        console.error('TMAP 도보 경로 API 호출 실패:', error.response?.data || error.message);
+        return res.status(500).json({ error: 'TMAP 도보 경로 호출 중 오류가 발생했습니다.' });
     }
 });
 
-// [길찾기 API] 자동차, 도보, 대중교통
-app.post('/api/directions', async (req, res) => {
+// ORS 자전거 길찾기 API
+app.get('/api/ors-directions', async (req, res) => {
+    console.log('/api/ors-directions (BICYCLING) route hit with query:', req.query);
+    const { start, end } = req.query;
+    if (!start || !end) return res.status(400).json({ error: '출발지, 도착지 정보가 필요합니다.' });
     try {
-        const { startX, startY, endX, endY, mode = 'driving' } = req.body;
-        let apiUrl;
-        const headers = { 'appKey': TMAP_APP_KEY, 'Content-Type': 'application/json' };
-        let data;
-
-        if (mode === 'driving') {
-            apiUrl = `https://apis.openapi.sk.com/tmap/routes?version=1&format=json`;
-            data = { startX, startY, endX, endY, reqCoordType: "WGS84GEO", resCoordType: "WGS84GEO" };
-        } else if (mode === 'walking') {
-            apiUrl = `https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json`;
-            data = { startX, startY, endX, endY, reqCoordType: "WGS84GEO", resCoordType: "WGS84GEO", startName: "출발지", endName: "도착지" };
-        } else if (mode === 'transit') {
-            apiUrl = `https://apis.openapi.sk.com/transit/routes`;
-            data = { startX, startY, endX, endY }; // 대중교통은 필요한 파라미터만 전송
-        } else {
-            return res.status(400).json({ message: '지원되지 않는 길찾기 모드입니다.' });
-        }
-        
-        const response = await axios.post(apiUrl, data, { headers });
-        res.json(response.data);
+        const apiUrl = 'https://api.openrouteservice.org/v2/directions/cycling-regular/geojson';
+        const payload = { coordinates: [ start.split(',').map(Number), end.split(',').map(Number) ] };
+        const headers = { 'Authorization': process.env.ORS_API_KEY, 'Content-Type': 'application/json' };
+        const response = await axios.post(apiUrl, payload, { headers });
+        console.log('ORS 자전거 경로 API 호출 성공');
+        return res.json(response.data);
     } catch (error) {
-        console.error(`!!! TMAP Directions (${req.body.mode}) 프록시 에러:`, error.response?.data || error.message);
-        res.status(500).json({ message: 'TMAP 길찾기 API 프록시 실패' });
+        console.error('ORS 자전거 경로 API 호출 실패:', error.response?.data || error.message);
+        return res.status(500).json({ error: 'ORS 자전거 경로 호출 중 오류가 발생했습니다.' });
+    }
+});
+
+// [추가] TMAP 자동차 길찾기 API
+app.get('/api/tmap-car-directions', async (req, res) => {
+    console.log('/api/tmap-car-directions (DRIVING) route hit with query:', req.query);
+    const { start, end } = req.query;
+    if (!start || !end) return res.status(400).json({ error: '출발지, 도착지 정보가 필요합니다.' });
+    const [startX, startY] = start.split(',');
+    const [endX, endY] = end.split(',');
+    try {
+        const apiUrl = 'https://apis.openapi.sk.com/tmap/routes?version=1';
+        const payload = { startX, startY, endX, endY, reqCoordType: 'WGS84GEO', resCoordType: 'WGS84GEO' };
+        const headers = { 'Content-Type': 'application/json', 'appKey': process.env.TMAP_API_KEY };
+        const response = await axios.post(apiUrl, payload, { headers });
+        console.log('TMAP 자동차 경로 API 호출 성공');
+        return res.json(response.data);
+    } catch (error) {
+        console.error('TMAP 자동차 경로 API 호출 실패:', error.response?.data || error.message);
+        return res.status(500).json({ error: 'TMAP 자동차 경로 호출 중 오류가 발생했습니다.' });
+    }
+});
+
+// HTML 페이지 라우팅
+app.get('/:page', (req, res) => {
+    const page = req.params.page;
+    if (page === 'results.html') {
+        res.sendFile(path.join(__dirname, 'results.html'));
+    } else {
+        res.sendFile(path.join(__dirname, 'index.html'));
     }
 });
 
 app.listen(port, () => {
-    console.log(`프록시 서버가 http://localhost:${port} 에서 실행 중입니다.`);
+    console.log(`서버가 http://localhost:${port} 에서 실행 중입니다.`);
 });
