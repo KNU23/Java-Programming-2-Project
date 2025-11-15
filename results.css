@@ -139,3 +139,16 @@
 .step-details { display: flex; flex-direction: column; }
 .step-instructions { font-size: 0.95rem; }
 .step-meta { font-size: 0.85rem; color: #777; margin-top: 4px; }
+
+.route-card-footer {
+    padding: 10px 15px;
+    border-top: 1px solid #eee;
+    font-size: 0.9em;
+    color: #337ab7; /* 파란색 계열로 강조 */
+    font-weight: bold;
+    background-color: #f9f9f9;
+}
+
+.route-card-footer .fa-clock {
+    margin-right: 8px;
+}

@@ -12,7 +12,23 @@ const port = 3000;
 
 app.use(express.static(path.join(__dirname)));
 
-// TMAP 도보 길찾기 API
+// [기존] 브라우저에서 보낸 JSON 본문(req.body)을 파싱하기 위해 필요합니다.
+app.use(express.json()); 
+
+// [수정] 브라우저(results.js)의 로그를 받아 터미널에 출력하는 엔드포인트
+app.post('/api/log', (req, res) => {
+    const { message } = req.body;
+    
+    // [수정] if (message) -> if (req.body.hasOwnProperty('message'))
+    // 이렇게 해야 빈 문자열("")도 로그로 찍을 수 있습니다.
+    if (req.body.hasOwnProperty('message')) {
+        // 💡 브라우저로부터 받은 메시지를 터미널에 [CLIENT LOG]와 함께 출력합니다.
+        console.log(`[CLIENT LOG] ${message}`); 
+    }
+    res.sendStatus(200); // "로그 잘 받았다"고 응답
+});
+
+// TMAP 도보 길찾기 API (기존 코드와 동일)
 app.get('/api/directions', async (req, res) => {
     console.log('/api/directions (WALKING) route hit with query:', req.query);
     const { start, end } = req.query;
@@ -32,7 +48,7 @@ app.get('/api/directions', async (req, res) => {
     }
 });
 
-// ORS 자전거 길찾기 API
+// ORS 자전거 길찾기 API (기존 코드와 동일)
 app.get('/api/ors-directions', async (req, res) => {
     console.log('/api/ors-directions (BICYCLING) route hit with query:', req.query);
     const { start, end } = req.query;
@@ -50,18 +66,38 @@ app.get('/api/ors-directions', async (req, res) => {
     }
 });
 
-// [추가] TMAP 자동차 길찾기 API
+// TMAP 자동차 길찾기 API (기존 코드와 동일)
 app.get('/api/tmap-car-directions', async (req, res) => {
     console.log('/api/tmap-car-directions (DRIVING) route hit with query:', req.query);
-    const { start, end } = req.query;
+    
+    const { start, end, departureTime } = req.query; 
+    
     if (!start || !end) return res.status(400).json({ error: '출발지, 도착지 정보가 필요합니다.' });
+    
     const [startX, startY] = start.split(',');
     const [endX, endY] = end.split(',');
+    
     try {
         const apiUrl = 'https://apis.openapi.sk.com/tmap/routes?version=1';
-        const payload = { startX, startY, endX, endY, reqCoordType: 'WGS84GEO', resCoordType: 'WGS84GEO' };
+        
+        const payload = { 
+            startX, 
+            startY, 
+            endX, 
+            endY, 
+            reqCoordType: 'WGS84GEO', 
+            resCoordType: 'WGS84GEO' 
+        };
+
+        if (departureTime) {
+            payload.departureTime = departureTime;
+            console.log('Using departureTime:', departureTime);
+        }
+
         const headers = { 'Content-Type': 'application/json', 'appKey': process.env.TMAP_API_KEY };
+        
         const response = await axios.post(apiUrl, payload, { headers });
+        
         console.log('TMAP 자동차 경로 API 호출 성공');
         return res.json(response.data);
     } catch (error) {
@@ -70,7 +106,8 @@ app.get('/api/tmap-car-directions', async (req, res) => {
     }
 });
 
-// HTML 페이지 라우팅
+
+// HTML 페이지 라우팅 (기존 코드와 동일)
 app.get('/:page', (req, res) => {
     const page = req.params.page;
     if (page === 'results.html') {
