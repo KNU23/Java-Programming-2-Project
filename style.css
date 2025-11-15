@@ -40,3 +40,24 @@ html, body {
     gap: 8px;
     transition: all 0.3s ease;
 }
+
+.route-steps {
+    margin-top: 10px;
+    border-top: 1px solid #ddd;
+    padding-top: 5px;
+}
+
+.step {
+    padding: 8px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+
+.step:hover {
+    background: #f2f2f2;
+}
+
+.step.active {
+    background: #fff6d1;
+}

@@ -1,5 +1,23 @@
 // results.html을 위한 스크립트
 
+// 상수 정의
+const CONFIG = {
+    BINARY_SEARCH_MAX_ITERATIONS: 10,
+    BINARY_SEARCH_TOLERANCE_MS: 60 * 1000, // 1분
+    BINARY_SEARCH_LOOKBACK_HOURS: 12,
+    MAP_ZOOM_INCREMENT: 1.5,
+    MAP_MAX_ZOOM: 18,
+    DEFAULT_CENTER: { lat: 37.5665, lng: 126.9780 },
+    DEFAULT_ZOOM: 12,
+    COLORS: {
+        WALKING: "#FF0000",
+        BICYCLING: "#007BFF",
+        DRIVING: "#6A36D9",
+        HIGHLIGHT: "#ff3d00"
+    },
+    LOCALSTORAGE_PREFIX: 'javaproject_'
+};
+
 let map;
 let directionsService;
 let directionsRenderer;
@@ -97,7 +115,7 @@ function highlightRouteSegment(coords, parentPolyline = null, feature = null) {
     // 하이라이트 생성
     highlightPolyline = new google.maps.Polyline({
         path: coords,
-        strokeColor: "#ff3d00",
+        strokeColor: CONFIG.COLORS.HIGHLIGHT,
         strokeOpacity: 0.6,
         strokeWeight: 12,
         zIndex: 999999,
@@ -112,8 +130,8 @@ function highlightRouteSegment(coords, parentPolyline = null, feature = null) {
     map.panTo(center);
 
     let currentZoom = map.getZoom();
-    let targetZoom = currentZoom + 1.5;
-    if (targetZoom > 18) targetZoom = 18;
+    let targetZoom = currentZoom + CONFIG.MAP_ZOOM_INCREMENT;
+    if (targetZoom > CONFIG.MAP_MAX_ZOOM) targetZoom = CONFIG.MAP_MAX_ZOOM;
     map.setZoom(targetZoom);
 }
 
@@ -130,21 +148,16 @@ function setupSwitch(switchId) {
 
     // 🕓 현재 시간 가져오기 헬퍼
     const setToCurrentDateTime = () => {
-        const now = new Date();
+        const current = getCurrentDateTime();
         if (switchId.includes('date')) {
-            const year = now.getFullYear();
-            const month = (now.getMonth() + 1).toString().padStart(2, '0');
-            const day = now.getDate().toString().padStart(2, '0');
-            input.value = `${year}-${month}-${day}`;
+            input.value = current.date;
         } else if (switchId.includes('time')) {
-            const hours = now.getHours().toString().padStart(2, '0');
-            const minutes = now.getMinutes().toString().padStart(2, '0');
-            input.value = `${hours}:${minutes}`;
+            input.value = current.time;
         }
     };
 
     // 로컬스토리지 상태 복원
-    const savedState = localStorage.getItem(switchId + "_state");
+    const savedState = localStorage.getItem(CONFIG.LOCALSTORAGE_PREFIX + switchId + "_state");
     if (savedState === "off") {
         buttons.forEach(btn => btn.classList.remove('active'));
         const offButton = switchContainer.querySelector('[data-value="off"]');
@@ -168,7 +181,7 @@ function setupSwitch(switchId) {
             input.disabled = isOff;
 
             // 상태 저장
-            localStorage.setItem(switchId + "_state", isOff ? "off" : "on");
+            localStorage.setItem(CONFIG.LOCALSTORAGE_PREFIX + switchId + "_state", isOff ? "off" : "on");
 
             if (isOff) {
                 setToCurrentDateTime();
@@ -183,10 +196,7 @@ function setupSwitch(switchId) {
     if (switchId.includes('time')) {
         input.addEventListener('change', () => {
             const dateInput = document.querySelector('#arrival-date-header');
-            const selectedDate = new Date(dateInput.value + 'T' + input.value);
-            const now = new Date();
-
-            if (selectedDate < now) {
+            if (!validateDateTime(dateInput.value, input.value)) {
                 alert('⚠️ 출발 시간을 현재보다 과거로 설정할 수 없습니다.');
                 setToCurrentDateTime();
             }
@@ -195,12 +205,8 @@ function setupSwitch(switchId) {
 
     if (switchId.includes('date')) {
         input.addEventListener('change', () => {
-            const dateInput = input.value;
             const timeInput = document.querySelector('#arrival-time-header').value;
-            const selectedDate = new Date(dateInput + 'T' + timeInput);
-            const now = new Date();
-
-            if (selectedDate < now) {
+            if (!validateDateTime(input.value, timeInput)) {
                 alert('⚠️ 출발 날짜를 과거로 설정할 수 없습니다.');
                 setToCurrentDateTime();
             }
@@ -210,8 +216,6 @@ function setupSwitch(switchId) {
 
 // 메시지를 서버(터미널)로만 로깅하는 함수
 function logToServer(message) {
-
-    // 1. 서버 터미널로 로그 메시지 전송
     fetch('/api/log', {
         method: 'POST',
         headers: {
@@ -223,30 +227,94 @@ function logToServer(message) {
     });
 }
 
-// (도보/자전거용) 권장 출발 시간 계산
-function getRecommendedStartTime(arrivalDateTimeStr, totalTimeSeconds) {
-    if (!arrivalDateTimeStr) return null;
+// 날짜/시간 검증 함수
+function validateDateTime(date, time) {
+    if (!date || !time) return true; // 값이 없으면 검증 통과
     try {
-        const arrivalTime = new Date(arrivalDateTimeStr);
-        const departureTime = new Date(arrivalTime.getTime() - totalTimeSeconds * 1000);
-        const hours = departureTime.getHours().toString().padStart(2, '0');
-        const minutes = departureTime.getMinutes().toString().padStart(2, '0');
-        if (isNaN(hours)) return null;
-        return `${hours}:${minutes}`;
+        const selectedDate = new Date(date + 'T' + time);
+        const now = new Date();
+        return selectedDate >= now;
     } catch (e) {
-        console.error("권장 출발 시간 계산 오류:", e);
-        return null;
+        console.error('날짜/시간 검증 오류:', e);
+        return false;
     }
 }
 
-// (자동차 이진 탐색용) TMAP API 시간 포맷터
-function formatToTmapTime(date) {
-    const y = date.getFullYear();
-    const m = (date.getMonth() + 1).toString().padStart(2, '0');
-    const d = date.getDate().toString().padStart(2, '0');
-    const h = date.getHours().toString().padStart(2, '0');
-    const min = date.getMinutes().toString().padStart(2, '0');
-    return `${y}${m}${d}${h}${min}`;
+// 현재 날짜/시간 문자열 반환
+function getCurrentDateTime() {
+    const now = new Date();
+    return {
+        date: `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`,
+        time: `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
+    };
+}
+
+// 시간 유틸리티 함수 (싱글톤 패턴)
+const TimeUtils = {
+    // 권장 출발 시간 계산
+    getRecommendedStartTime(arrivalDateTimeStr, totalTimeSeconds) {
+        if (!arrivalDateTimeStr) return null;
+        try {
+            const arrivalTime = new Date(arrivalDateTimeStr);
+            const departureTime = new Date(arrivalTime.getTime() - totalTimeSeconds * 1000);
+            const hours = departureTime.getHours().toString().padStart(2, '0');
+            const minutes = departureTime.getMinutes().toString().padStart(2, '0');
+            if (isNaN(hours)) return null;
+            return `${hours}:${minutes}`;
+        } catch (e) {
+            console.error("권장 출발 시간 계산 오류:", e);
+            return null;
+        }
+    },
+    // TMAP API 시간 포맷 변환
+    formatToTmapTime(date) {
+        const y = date.getFullYear();
+        const m = (date.getMonth() + 1).toString().padStart(2, '0');
+        const d = date.getDate().toString().padStart(2, '0');
+        const h = date.getHours().toString().padStart(2, '0');
+        const min = date.getMinutes().toString().padStart(2, '0');
+        return `${y}${m}${d}${h}${min}`;
+    }
+};
+
+// 로딩 상태 표시/숨김
+function showLoadingIndicator(message = "경로를 찾는 중...") {
+    const container = document.getElementById('route-details-container');
+    container.innerHTML = `
+        <div style="text-align: center; padding: 40px; color: #666;">
+            <i class="fa-solid fa-spinner fa-spin" style="font-size: 48px; margin-bottom: 20px;"></i>
+            <p style="font-size: 18px; font-weight: 500;">${message}</p>
+        </div>`;
+}
+
+function hideLoadingIndicator() {
+    // 로딩 인디케이터는 실제 컨텐츠로 대체됨
+}
+
+// 에러 메시지 표시 (재시도 버튼 포함)
+function showErrorMessage(message, onRetry = null) {
+    const container = document.getElementById('route-details-container');
+    const retryButton = onRetry ? `
+        <button onclick="location.reload()" style="
+            margin-top: 20px;
+            padding: 10px 24px;
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        ">
+            <i class="fa-solid fa-rotate-right"></i> 다시 시도
+        </button>` : '';
+    
+    container.innerHTML = `
+        <div style="text-align: center; padding: 40px; color: #d32f2f;">
+            <i class="fa-solid fa-circle-exclamation" style="font-size: 48px; margin-bottom: 20px;"></i>
+            <h2 style="margin: 0 0 10px 0; font-size: 24px;">경로를 찾을 수 없습니다</h2>
+            <p style="font-size: 16px; color: #666;">${message}</p>
+            ${retryButton}
+        </div>`;
 }
 
 // Google 지도 초기화
@@ -255,7 +323,11 @@ async function initMap() {
     const { DirectionsService, DirectionsRenderer } = await google.maps.importLibrary("routes");
     const { Geocoder } = await google.maps.importLibrary("geocoding");
 
-    map = new Map(document.getElementById("map"), { center: { lat: 37.5665, lng: 126.9780 }, zoom: 12, disableDefaultUI: true });
+    map = new Map(document.getElementById("map"), { 
+        center: CONFIG.DEFAULT_CENTER, 
+        zoom: CONFIG.DEFAULT_ZOOM, 
+        disableDefaultUI: true 
+    });
     directionsService = new DirectionsService();
     directionsRenderer = new DirectionsRenderer();
     directionsRenderer.setMap(map);
@@ -266,22 +338,18 @@ async function initMap() {
 
 // [기존] (자동차용) 이진 탐색 함수
 async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredArrivalTime) {
-
     logToServer(`이진 탐색 시작. 희망 도착 시간: ${desiredArrivalTime.toLocaleString()}`);
 
-    let low = new Date(desiredArrivalTime.getTime() - 12 * 60 * 60 * 1000); // 12시간 전
-    let high = new Date(desiredArrivalTime.getTime()); // 희망 도착 시간
+    let low = new Date(desiredArrivalTime.getTime() - CONFIG.BINARY_SEARCH_LOOKBACK_HOURS * 60 * 60 * 1000);
+    let high = new Date(desiredArrivalTime.getTime());
 
     let bestRouteData = null;
     let minDiff = Infinity;
 
-    const MAX_ITERATIONS = 10;
-    const TOLERANCE_MS = 60 * 1000; // 1분
-
     // 이진 탐색 시작
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
+    for (let i = 0; i < CONFIG.BINARY_SEARCH_MAX_ITERATIONS; i++) {
         const midDepartureTime = new Date((low.getTime() + high.getTime()) / 2);
-        const tmapTimeString = formatToTmapTime(midDepartureTime);
+        const tmapTimeString = TimeUtils.formatToTmapTime(midDepartureTime);
         const apiUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${tmapTimeString}`;
 
         logToServer(`[${i + 1}/${MAX_ITERATIONS}] API 호출... 출발시간: ${midDepartureTime.toLocaleString()}`);
@@ -306,7 +374,7 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
             bestRouteData.recommendedDepartureTime = midDepartureTime;
         }
 
-        if (Math.abs(diff) <= TOLERANCE_MS) {
+        if (Math.abs(diff) <= CONFIG.BINARY_SEARCH_TOLERANCE_MS) {
             logToServer("정확한 시간 탐색 성공 (오차 1분 이내)");
             break;
         }
@@ -317,7 +385,7 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
             low = midDepartureTime;
         }
 
-        if (i === MAX_ITERATIONS - 1) {
+        if (i === CONFIG.BINARY_SEARCH_MAX_ITERATIONS - 1) {
             logToServer("최대 반복 도달. 탐색 종료.");
         }
     }
@@ -348,8 +416,11 @@ async function findAndDisplayRoute() {
 
     document.getElementById('start-point-header').value = start;
     document.getElementById('end-point-header').value = end;
-    document.getElementById('arrival-date-header').value = arrivalDate;
-    document.getElementById('arrival-time-header').value = arrivalTime;
+    
+    // URL에 날짜/시간 값이 있을 때만 input에 설정 (없으면 setupSwitch의 현재시간 유지)
+    if (arrivalDate) document.getElementById('arrival-date-header').value = arrivalDate;
+    if (arrivalTime) document.getElementById('arrival-time-header').value = arrivalTime;
+    
     document.getElementById('transport-mode-header').value = mode;
     document.querySelectorAll('.transport-mode').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
 
@@ -357,10 +428,15 @@ async function findAndDisplayRoute() {
 
     let arrivalDateTime = null; // Google Transit API용
     let arrivalDateTimeStr = null; // TMAP/ORS 계산용
-    if (arrivalDate && arrivalTime) {
-        const timeStr = arrivalTime.length === 5 ? `${arrivalTime}:00` : arrivalTime;
-        arrivalDateTime = new Date(`${arrivalDate}T${timeStr}`);
-        arrivalDateTimeStr = `${arrivalDate}T${timeStr}`;
+    
+    // URL 파라미터가 없으면 현재 input 값 사용 (setupSwitch에서 설정한 현재시간)
+    const finalDate = arrivalDate || document.getElementById('arrival-date-header').value;
+    const finalTime = arrivalTime || document.getElementById('arrival-time-header').value;
+    
+    if (finalDate && finalTime) {
+        const timeStr = finalTime.length === 5 ? `${finalTime}:00` : finalTime;
+        arrivalDateTime = new Date(`${finalDate}T${timeStr}`);
+        arrivalDateTimeStr = `${finalDate}T${timeStr}`;
     }
 
     directionsRenderer.setDirections({ routes: [] });
@@ -368,10 +444,22 @@ async function findAndDisplayRoute() {
 
     bicyclingLayer.setMap(mode === 'BICYCLING' ? map : null);
 
+    // 로딩 표시
+    showLoadingIndicator();
+
     const geocoder = new google.maps.Geocoder();
     try {
         const startResult = await geocoder.geocode({ address: start });
         const endResult = await geocoder.geocode({ address: end });
+        
+        // Geocoding 결과 검증
+        if (!startResult.results || startResult.results.length === 0) {
+            throw new Error('출발지 주소를 찾을 수 없습니다. 주소를 확인해주세요.');
+        }
+        if (!endResult.results || endResult.results.length === 0) {
+            throw new Error('도착지 주소를 찾을 수 없습니다. 주소를 확인해주세요.');
+        }
+        
         const startCoords = startResult.results[0].geometry.location;
         const endCoords = endResult.results[0].geometry.location;
 
@@ -379,14 +467,14 @@ async function findAndDisplayRoute() {
             const response = await fetch(`/api/directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}`);
             const tmapData = await response.json();
             if (!response.ok) throw new Error(tmapData.error || 'TMAP API 요청 실패');
-            drawTmapRoute(tmapData, "#FF0000");
+            drawRoute(tmapData, CONFIG.COLORS.WALKING, 'tmap');
             displayTmapRouteSummary(tmapData, arrivalDateTimeStr);
 
         } else if (mode === 'BICYCLING') {
             const response = await fetch(`/api/ors-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}`);
             const orsData = await response.json();
             if (!response.ok) throw new Error(orsData.error || 'ORS API 요청 실패');
-            drawOrsRoute(orsData);
+            drawRoute(orsData, CONFIG.COLORS.BICYCLING, 'ors');
             displayOrsRouteSummary(orsData, arrivalDateTimeStr);
 
         } else if (mode === 'DRIVING') {
@@ -400,7 +488,7 @@ async function findAndDisplayRoute() {
                 if (!response.ok) throw new Error(tmapCarData.error || 'TMAP 자동차 API 요청 실패');
             }
 
-            drawTmapRoute(tmapCarData, "#6A36D9");
+            drawRoute(tmapCarData, CONFIG.COLORS.DRIVING, 'tmap');
             displayTmapCarRouteSummary(tmapCarData, arrivalDateTime);
 
         } else { // TRANSIT
@@ -412,12 +500,11 @@ async function findAndDisplayRoute() {
             };
 
             directionsService.route(request, (result, status) => {
-                const container = document.getElementById('route-details-container');
                 if (status === 'OK') {
                     directionsRenderer.setDirections(result);
                     displayGoogleRouteSummary(result.routes[0], arrivalDateTime);
 
-                    // ✅ 추가: 출발/도착 마커 표시
+                    // 출발/도착 마커 표시
                     const leg = result.routes[0].legs[0];
                     const startLoc = leg.start_location;
                     const endLoc = leg.end_location;
@@ -426,70 +513,58 @@ async function findAndDisplayRoute() {
                         { lat: endLoc.lat(), lng: endLoc.lng() },
                     ]);
                 } else {
-                    container.innerHTML = `<h2>경로를 찾을 수 없습니다.</h2><p>오류: ${status}</p>`;
+                    const errorMsg = status === 'ZERO_RESULTS' 
+                        ? '대중교통 경로를 찾을 수 없습니다. 다른 교통수단을 이용해보세요.'
+                        : `경로 검색 중 오류가 발생했습니다. (${status})`;
+                    showErrorMessage(errorMsg, true);
                     logToServer(`Google 대중교통 경로 찾기 실패: ${status}`);
                 }
             });
         }
     } catch (e) {
         logToServer(`치명적 오류 발생: ${e.message}`);
-        document.getElementById('route-details-container').innerHTML = `<h2>오류</h2><p>${e.message}</p>`;
+        showErrorMessage(e.message, true);
     }
 }
 
-function drawTmapRoute(tmapData, color) {
-    const path = [];
-    tmapData.features.forEach(feature => {
-        if (feature.geometry.type === "LineString") {
-            feature.geometry.coordinates.forEach(coord => {
-                path.push({ lng: coord[0], lat: coord[1] });
-            });
+// 통합 경로 그리기 함수 (도보, 자전거, 자동차 모두 지원)
+function drawRoute(data, color, routeType) {
+    let path = [];
+    
+    if (routeType === 'tmap') {
+        // TMAP 데이터 (도보, 자동차)
+        data.features.forEach(feature => {
+            if (feature.geometry.type === "LineString") {
+                feature.geometry.coordinates.forEach(coord => {
+                    path.push({ lng: coord[0], lat: coord[1] });
+                });
+            }
+        });
+    } else if (routeType === 'ors') {
+        // ORS 데이터 (자전거)
+        if (!data || !data.features || !data.features[0]) {
+            console.error("❌ ORS 데이터가 올바르지 않습니다.", data);
+            return;
         }
-    });
+        path = data.features[0].geometry.coordinates.map(coord => ({
+            lng: coord[0],
+            lat: coord[1],
+        }));
+    }
 
+    // 기존 폴리라인 제거
     if (customPolyline) customPolyline.setMap(null);
+    
+    // 새 경로 표시
     customPolyline = new google.maps.Polyline({
         path,
         strokeColor: color,
-        strokeOpacity: 0.8,
+        strokeOpacity: routeType === 'ors' ? 0.85 : 0.8,
         strokeWeight: 6,
         map,
     });
 
     // 출발/도착 마커 추가
-    addStartEndMarkers(path);
-
-    const bounds = new google.maps.LatLngBounds();
-    path.forEach(p => bounds.extend(p));
-    map.fitBounds(bounds);
-}
-
-
-// ORS 자전거 경로를 지도에 그리는 함수
-function drawOrsRoute(orsData) {
-    if (!orsData || !orsData.features || !orsData.features[0]) {
-        console.error("❌ ORS 데이터가 올바르지 않습니다.", orsData);
-        return;
-    }
-
-    const path = orsData.features[0].geometry.coordinates.map(coord => ({
-        lng: coord[0],
-        lat: coord[1],
-    }));
-
-    // 기존 폴리라인 제거
-    if (customPolyline) customPolyline.setMap(null);
-
-    // 지도에 새 경로 표시
-    customPolyline = new google.maps.Polyline({
-        path,
-        strokeColor: "#007BFF",   // 파란색
-        strokeOpacity: 0.85,
-        strokeWeight: 6,
-        map,
-    });
-
-    // 출발/도착 마커 표시 (모든 모드 공통)
     addStartEndMarkers(path);
 
     // 지도 범위 자동 조정
@@ -499,28 +574,82 @@ function drawOrsRoute(orsData) {
 }
 
 
+// 통합 경로 요약 카드 생성 함수
+function createRouteSummaryCard(config) {
+    const { mode, totalTime, totalDistance, startAddress, endAddress, taxiFare, startTimeHtml } = config;
+    
+    const summaryCard = document.createElement('div');
+    summaryCard.className = 'route-card';
+    
+    let modeInfo = '';
+    switch(mode) {
+        case 'walking':
+            modeInfo = '<strong>도보 경로</strong>';
+            break;
+        case 'bicycling':
+            modeInfo = '<strong>자전거 경로</strong>';
+            break;
+        case 'driving':
+            modeInfo = `<strong>자동차 경로</strong><br>
+                <span>예상 택시요금: ${taxiFare.toLocaleString()}원</span>`;
+            break;
+        case 'transit':
+            modeInfo = '<strong>대중교통 경로</strong>';
+            break;
+    }
+    
+    summaryCard.innerHTML = `
+        <div class="route-card-body">
+            <span class="duration">약 ${totalTime} 분</span>
+            <span class="meta-info">${totalDistance} km</span>
+        </div>
+        <div class="route-card-header">
+            ${modeInfo}<br><br>
+            <span style="color:#34A853;font-weight:bold;">● 출발지:</span> ${startAddress}<br>
+            <span style="color:#EA4335;font-weight:bold;">● 도착지:</span> ${endAddress}
+        </div>
+        ${startTimeHtml}`;
+    
+    return summaryCard;
+}
+
 // 🥾 도보 요약 + 단계별 클릭 시 거리기반 하이라이트
-function displayTmapRouteSummary(tmapData, arrivalDateTimeStr) {
+async function displayTmapRouteSummary(tmapData, arrivalDateTimeStr) {
     const container = document.getElementById('route-details-container');
     container.innerHTML = '';
     const summary = tmapData.features[0].properties;
     const totalTime = Math.round(summary.totalTime / 60);
     const totalDistance = (summary.totalDistance / 1000).toFixed(1);
 
-    const recommendedStartTime = getRecommendedStartTime(arrivalDateTimeStr, summary.totalTime);
+    const recommendedStartTime = TimeUtils.getRecommendedStartTime(arrivalDateTimeStr, summary.totalTime);
     const startTimeHtml = recommendedStartTime
         ? `<div class="route-card-footer"><i class="fa-solid fa-clock"></i><span>${recommendedStartTime} 출발 권장</span></div>`
         : '';
 
-    const summaryCard = document.createElement('div');
-    summaryCard.className = 'route-card';
-    summaryCard.innerHTML = `
-      <div class="route-card-body">
-        <span class="duration">약 ${totalTime} 분</span>
-        <span class="meta-info">${totalDistance} km</span>
-      </div>
-      <div class="route-card-header"><strong>도보 경로</strong></div>
-      ${startTimeHtml}`;
+    // 좌표 추출 및 주소 변환
+    const coords = [];
+    tmapData.features.forEach(f => {
+        if (f.geometry.type === "LineString") {
+            f.geometry.coordinates.forEach(c => coords.push({ lat: c[1], lng: c[0] }));
+        }
+    });
+    const start = coords[0];
+    const end = coords[coords.length - 1];
+
+    const [startAddress, endAddress] = await Promise.all([
+        getAddressFromCoords(start.lat, start.lng),
+        getAddressFromCoords(end.lat, end.lng)
+    ]);
+
+    const summaryCard = createRouteSummaryCard({
+        mode: 'walking',
+        totalTime,
+        totalDistance,
+        startAddress,
+        endAddress,
+        taxiFare: 0,
+        startTimeHtml
+    });
     container.appendChild(summaryCard);
 
     // 단계별 안내 리스트
@@ -598,13 +727,13 @@ async function displayTmapCarRouteSummary(tmapData, arrivalDateTime) {
         const minutes = recTime.getMinutes().toString().padStart(2, '0');
         startTimeHtml = `<div class="route-card-footer"><i class="fa-solid fa-clock"></i><span>${hours}:${minutes} 출발</span></div>`;
     } else if (arrivalDateTime && !isNaN(arrivalDateTime)) {
-        const recommendedStartTime = getRecommendedStartTime(arrivalDateTime.toISOString(), summary.totalTime);
+        const recommendedStartTime = TimeUtils.getRecommendedStartTime(arrivalDateTime.toISOString(), summary.totalTime);
         if (recommendedStartTime) {
             startTimeHtml = `<div class="route-card-footer"><i class="fa-solid fa-clock"></i><span>${recommendedStartTime} 출발 권장</span></div>`;
         }
     }
 
-    // 출발/도착 좌표 추출
+    // 출발/도착 좌표 추출 및 주소 변환
     const coords = [];
     tmapData.features.forEach(f => {
         if (f.geometry.type === "LineString") {
@@ -614,26 +743,20 @@ async function displayTmapCarRouteSummary(tmapData, arrivalDateTime) {
     const start = coords[0];
     const end = coords[coords.length - 1];
 
-    // 주소 변환
     const [startAddress, endAddress] = await Promise.all([
         getAddressFromCoords(start.lat, start.lng),
         getAddressFromCoords(end.lat, end.lng)
     ]);
 
-    const summaryCard = document.createElement('div');
-    summaryCard.className = 'route-card';
-    summaryCard.innerHTML = `
-        <div class="route-card-body">
-            <span class="duration">약 ${totalTime} 분</span>
-            <span class="meta-info">${totalDistance} km</span>
-        </div>
-        <div class="route-card-header">
-            <strong>자동차 경로</strong><br>
-            <span>예상 택시요금: ${summary.taxiFare.toLocaleString()}원</span><br><br>
-            <span style="color:#34A853;font-weight:bold;">● 출발지:</span> ${startAddress}<br>
-            <span style="color:#EA4335;font-weight:bold;">● 도착지:</span> ${endAddress}
-        </div>
-        ${startTimeHtml}`;
+    const summaryCard = createRouteSummaryCard({
+        mode: 'driving',
+        totalTime,
+        totalDistance,
+        startAddress,
+        endAddress,
+        taxiFare: summary.taxiFare,
+        startTimeHtml
+    });
     container.appendChild(summaryCard);
 
     // 단계별 안내
@@ -698,30 +821,31 @@ async function displayOrsRouteSummary(orsData, arrivalDateTimeStr) {
     const totalTime = Math.round(summary.duration / 60);
     const totalDistance = (summary.distance / 1000).toFixed(1);
 
-    // 좌표 추출
+    // 권장 출발 시간 계산
+    const recommendedStartTime = TimeUtils.getRecommendedStartTime(arrivalDateTimeStr, summary.duration);
+    const startTimeHtml = recommendedStartTime
+        ? `<div class="route-card-footer"><i class="fa-solid fa-clock"></i><span>${recommendedStartTime} 출발 권장</span></div>`
+        : '';
+
+    // 좌표 추출 및 주소 변환
     const coords = orsData.features[0].geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
     const start = coords[0];
     const end = coords[coords.length - 1];
 
-    // 주소 변환 (도로명 주소 출력)
     const [startAddress, endAddress] = await Promise.all([
         getAddressFromCoords(start.lat, start.lng),
         getAddressFromCoords(end.lat, end.lng)
     ]);
 
-    // 카드 생성
-    const summaryCard = document.createElement('div');
-    summaryCard.className = 'route-card';
-    summaryCard.innerHTML = `
-        <div class="route-card-body">
-            <span class="duration">약 ${totalTime} 분</span>
-            <span class="meta-info">${totalDistance} km</span>
-        </div>
-        <div class="route-card-header">
-            <strong>자전거 경로</strong><br><br>
-            <span style="color:#34A853;font-weight:bold;">● 출발지:</span> ${startAddress}<br>
-            <span style="color:#EA4335;font-weight:bold;">● 도착지:</span> ${endAddress}
-        </div>`;
+    const summaryCard = createRouteSummaryCard({
+        mode: 'bicycling',
+        totalTime,
+        totalDistance,
+        startAddress,
+        endAddress,
+        taxiFare: 0,
+        startTimeHtml: startTimeHtml
+    });
     container.appendChild(summaryCard);
 
     // 단계별 안내 (클릭 시 하이라이트)
@@ -770,18 +894,31 @@ async function displayGoogleRouteSummary(route, arrivalDateTime) {
         getAddressFromCoords(endLoc.lat(), endLoc.lng())
     ]);
 
-    const summaryCard = document.createElement('div');
-    summaryCard.className = 'route-card';
-    summaryCard.innerHTML = `
-        <div class="route-card-body">
-            <span class="duration">${leg.duration.text}</span>
-            <span class="meta-info">${leg.distance.text}</span>
-        </div>
-        <div class="route-card-header">
-            <strong>대중교통 경로</strong><br><br>
-            <span style="color:#34A853;font-weight:bold;">● 출발지:</span> ${startAddress}<br>
-            <span style="color:#EA4335;font-weight:bold;">● 도착지:</span> ${endAddress}
-        </div>`;
+    // duration.text에서 "분" 추출
+    const durationMatch = leg.duration.text.match(/\d+/);
+    const totalTime = durationMatch ? durationMatch[0] : leg.duration.text;
+    
+    // distance.text에서 "km" 추출
+    const distanceMatch = leg.distance.text.match(/[\d.]+/);
+    const totalDistance = distanceMatch ? distanceMatch[0] : leg.distance.text;
+
+    // 권장 출발 시간 계산
+    const recommendedStartTime = arrivalDateTime 
+        ? TimeUtils.getRecommendedStartTime(arrivalDateTime.toISOString(), leg.duration.value)
+        : null;
+    const startTimeHtml = recommendedStartTime
+        ? `<div class="route-card-footer"><i class="fa-solid fa-clock"></i><span>${recommendedStartTime} 출발 권장</span></div>`
+        : '';
+
+    const summaryCard = createRouteSummaryCard({
+        mode: 'transit',
+        totalTime,
+        totalDistance,
+        startAddress,
+        endAddress,
+        taxiFare: 0,
+        startTimeHtml: startTimeHtml
+    });
     container.appendChild(summaryCard);
 
     // 단계별 안내 (클릭 하이라이트)
@@ -814,15 +951,22 @@ async function displayGoogleRouteSummary(route, arrivalDateTime) {
 
 
 
-// 페이지 로드 후 이벤트 리스너 설정 - (기존 코드와 동일)
+// 페이지 로드 후 이벤트 리스너 설정
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('results-form');
     const hiddenModeInput = document.getElementById('transport-mode-header');
 
+    // 모드 버튼 클릭 시 UI만 변경 (API 호출 안 함)
     document.querySelectorAll('.mode-selector-sidebar .transport-mode').forEach(button => {
         button.addEventListener('click', () => {
+            // active 상태 변경
+            document.querySelectorAll('.transport-mode').forEach(btn => 
+                btn.classList.remove('active')
+            );
+            button.classList.add('active');
+            
+            // hidden input 값만 설정 (form submit 제거)
             hiddenModeInput.value = button.dataset.mode.toUpperCase();
-            form.requestSubmit();
         });
     });
 

@@ -10,6 +10,7 @@
     "@googlemaps/google-maps-services-js": "^3.3.42",
     "axios": "^1.12.2",
     "cors": "^2.8.5",
+    "debug": "^4.4.3",
     "dotenv": "^16.6.1",
     "express": "^4.21.2"
   }
