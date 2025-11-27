@@ -45,7 +45,6 @@ async function getAddressFromCoords(lat, lng) {
 function addStartEndMarkers(path) {
     if (!path || path.length < 2) return;
 
-    // 기존 마커 제거
     if (startMarker) startMarker.setMap(null);
     if (endMarker) endMarker.setMap(null);
 
@@ -350,9 +349,16 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
     for (let i = 0; i < CONFIG.BINARY_SEARCH_MAX_ITERATIONS; i++) {
         const midDepartureTime = new Date((low.getTime() + high.getTime()) / 2);
         const tmapTimeString = TimeUtils.formatToTmapTime(midDepartureTime);
-        const apiUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${tmapTimeString}`;
 
-        logToServer(`[${i + 1}/${MAX_ITERATIONS}] API 호출... 출발시간: ${midDepartureTime.toLocaleString()}`);
+        // [수정] 원본 주소와 도착 시간을 쿼리 파라미터로 추가
+        const urlParams = new URLSearchParams(window.location.search);
+        const startAddr = encodeURIComponent(urlParams.get('start'));
+        const endAddr = encodeURIComponent(urlParams.get('end'));
+        const arrivalStr = encodeURIComponent(desiredArrivalTime.toISOString()); // "2025-11-15T09:00:00.000Z"
+
+        const apiUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${tmapTimeString}&startAddress=${startAddr}&endAddress=${endAddr}&arrivalDateTimeStr=${arrivalStr}`;
+
+        logToServer(`[${i + 1}/${CONFIG.BINARY_SEARCH_MAX_ITERATIONS}] API 호출... 출발시간: ${midDepartureTime.toLocaleString()}`);
 
         const response = await fetch(apiUrl);
         const tmapData = await response.json();
@@ -953,6 +959,8 @@ async function displayGoogleRouteSummary(route, arrivalDateTime) {
 
 // 페이지 로드 후 이벤트 리스너 설정
 document.addEventListener('DOMContentLoaded', () => {
+
+    checkLoginStatus();
     const form = document.getElementById('results-form');
     const hiddenModeInput = document.getElementById('transport-mode-header');
 
@@ -967,9 +975,54 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // hidden input 값만 설정 (form submit 제거)
             hiddenModeInput.value = button.dataset.mode.toUpperCase();
+
+            form.submit();
         });
     });
 
     setupSwitch('date-switch-header');
     setupSwitch('time-switch-header');
 });
+
+/**
+ * 서버에 현재 로그인 상태를 확인하고 UI를 업데이트하는 함수
+ */
+async function checkLoginStatus() {
+    try {
+        const res = await fetch('/api/auth/status');
+        const data = await res.json();
+        
+        const userActionsDiv = document.getElementById('user-actions');
+        if (!userActionsDiv) return;
+
+        updateLoginUI(userActionsDiv, data.loggedIn, data.nickname);
+
+    } catch (error) {
+        console.error('로그인 상태 확인 실패:', error);
+        const userActionsDiv = document.getElementById('user-actions');
+        if (userActionsDiv) updateLoginUI(userActionsDiv, false);
+    }
+}
+
+/**
+ * 로그인 상태에 따라 UI (로그인/로그아웃 버튼)를 변경하는 함수
+ */
+function updateLoginUI(container, isLoggedIn, nickname) {
+    if (isLoggedIn) {
+        // [로그인된 상태] 닉네임과 로그아웃 버튼 표시
+        container.innerHTML = `
+            <span style="margin-right: 15px;">${nickname}님</span>
+            <a href="/api/auth/logout" class="logout-link">로그아웃</a>
+        `;
+    } else {
+        // [로그아웃된 상태] 로그인 버튼 표시 (index.html로 이동)
+        container.innerHTML = `
+            <a href="/index.html" id="kakao-login-btn">
+                <i class="fa-solid fa-circle-user"></i>
+                <span>로그인</span>
+            </a>
+        `;
+        // results.html에서는 로그인 버튼 클릭 시 로그인 로직 대신 
+        // 메인 페이지(index.html)로 이동시킵니다.
+    }
+}

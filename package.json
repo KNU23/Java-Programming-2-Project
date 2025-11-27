@@ -9,9 +9,13 @@
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.3.42",
     "axios": "^1.12.2",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "debug": "^4.4.3",
     "dotenv": "^16.6.1",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^4.2.1",
+    "pg": "^8.16.3"
   }
 }

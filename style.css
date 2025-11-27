@@ -61,3 +61,19 @@ html, body {
 .step.active {
     background: #fff6d1;
 }
+
+#user-actions,
+#user-actions i {
+    color: white;
+}
+
+/* 링크(로그인/로그아웃) 색상도 흰색으로 설정 */
+#user-actions a {
+    color: white;
+    text-decoration: none; /* 링크 밑줄 제거 */
+}
+
+/* (선택) 링크에 마우스를 올렸을 때 밑줄 표시 */
+#user-actions a:hover {
+    text-decoration: underline;
+}

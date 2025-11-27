@@ -63,6 +63,8 @@ function setupSwitch(switchId) {
 
 // 페이지 로드 완료 후 실행
 document.addEventListener('DOMContentLoaded', () => {
+
+    checkLoginStatus();
     // 1. 이동 수단 버튼 설정
     const modeButtons = document.querySelectorAll('.mode-selector .transport-mode');
     const hiddenModeInput = document.getElementById('transport-mode');
@@ -90,4 +92,74 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. On/Off 스위치 활성화 (수정된 함수 호출)
     setupSwitch('date-switch-hero');
     setupSwitch('time-switch-hero');
+
 });
+
+/**
+    * 서버에 현재 로그인 상태를 확인하고 UI를 업데이트하는 함수
+    */
+    async function checkLoginStatus() {
+        try {
+            const res = await fetch('/api/auth/status');
+            const data = await res.json();
+            
+            const userActionsDiv = document.getElementById('user-actions');
+            if (!userActionsDiv) return;
+
+            updateLoginUI(userActionsDiv, data.loggedIn, data.nickname);
+
+        } catch (error) {
+            console.error('로그인 상태 확인 실패:', error);
+            // 에러 시 로그아웃 상태 UI 표시
+            const userActionsDiv = document.getElementById('user-actions');
+            if (userActionsDiv) updateLoginUI(userActionsDiv, false);
+        }
+    }
+
+    /**
+     * 로그인 상태에 따라 UI (로그인/로그아웃 버튼)를 변경하는 함수
+     */
+    function updateLoginUI(container, isLoggedIn, nickname) {
+        if (isLoggedIn) {
+            // [로그인된 상태] 닉네임과 로그아웃 버튼 표시
+            container.innerHTML = `
+                <span style="margin-right: 15px;">${nickname}님</span>
+                <a href="/api/auth/logout" class="logout-link">로그아웃</a>
+            `;
+            // (필요 시 .logout-link에 CSS 스타일 추가)
+
+        } else {
+            // [로그아웃된 상태] 카카오 로그인 버튼 표시
+            container.innerHTML = `
+                <a href="#" id="kakao-login-btn">
+                    <i class="fa-solid fa-circle-user"></i>
+                    <span>로그인</span>
+                </a>
+            `;
+            
+            // 카카오 로그인 버튼에 클릭 이벤트 추가
+            const loginBtn = document.getElementById('kakao-login-btn');
+            if (loginBtn) {
+                loginBtn.addEventListener('click', onKakaoLoginClick);
+            }
+        }
+    }
+
+    /**
+     * 카카오 로그인 버튼 클릭 시 실행되는 함수
+     */
+    async function onKakaoLoginClick(e) {
+        e.preventDefault();
+        try {
+            // 1. 서버에서 카카오 설정값(API 키, Redirect URI)을 가져옵니다.
+            const configRes = await fetch('/api/auth/kakao/config');
+            const config = await configRes.json();
+
+            // 2. 카카오 로그인 페이지로 리디렉션합니다.
+            const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${config.restApiKey}&redirect_uri=${config.redirectUri}&response_type=code&prompt=login`;            
+            window.location.href = kakaoAuthUrl;
+        } catch (error) {
+            console.error('카카오 로그인 설정 실패:', error);
+            alert('로그인 처리 중 오류가 발생했습니다.');
+        }
+    }
