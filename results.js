@@ -13,7 +13,9 @@ const CONFIG = {
         WALKING: "#FF0000",
         BICYCLING: "#007BFF",
         DRIVING: "#6A36D9",
-        HIGHLIGHT: "#ff3d00"
+        TRANSIT: "#8B4513",
+        ALTERNATIVE: "#BDBDBD",
+        HIGHLIGHT: "#00FF00"
     },
     LOCALSTORAGE_PREFIX: 'javaproject_'
 };
@@ -23,7 +25,9 @@ let directionsService;
 let directionsRenderer;
 let bicyclingLayer;
 let customPolyline;
+let customBorderPolyline = null;
 let highlightPolyline = null;
+let alternativePolylines = [];
 let currentHighlightedStep = null;
 let previousZoomLevel = null;
 let startMarker = null;
@@ -84,54 +88,44 @@ function addStartEndMarkers(path) {
 function highlightRouteSegment(coords, parentPolyline = null, feature = null) {
     if (!coords || !coords.length) return;
 
-    // 같은 구간 다시 클릭 → 하이라이트 해제 + 줌 복귀
+    // 1. 같은 구간 다시 클릭 시: 하이라이트 해제
     if (currentHighlightedStep === feature) {
         if (highlightPolyline) highlightPolyline.setMap(null);
         highlightPolyline = null;
         currentHighlightedStep = null;
-
-        // 지도 줌 복귀
-        if (previousZoomLevel !== null) {
-            map.setZoom(previousZoomLevel);
-            previousZoomLevel = null; // 한 번 복귀 후 초기화
-        }
-
-        // 전체 경로 보기로 복귀 (옵션)
-        if (parentPolyline) {
-            const bounds = new google.maps.LatLngBounds();
-            parentPolyline.getPath().forEach(p => bounds.extend(p));
-            map.panToBounds(bounds, 80);
-        }
         return;
     }
 
-    // 새로운 구간 클릭
+    // 2. 새로운 구간 클릭 시: 기존 하이라이트 제거 후 새로 그리기
     if (highlightPolyline) highlightPolyline.setMap(null);
 
-    // 현재 줌 저장
-    previousZoomLevel = map.getZoom();
-
-    // 하이라이트 생성
     highlightPolyline = new google.maps.Polyline({
         path: coords,
-        strokeColor: CONFIG.COLORS.HIGHLIGHT,
-        strokeOpacity: 0.6,
-        strokeWeight: 12,
-        zIndex: 999999,
+        strokeColor: "#00FF00", // 밝은 초록색 (잘 보이게)
+        strokeOpacity: 1.0,
+        strokeWeight: 12,       // 두께를 더 두껍게
+        zIndex: 9999,
         map,
     });
     currentHighlightedStep = feature;
 
-    // 확대 동작
+    // 3. 지도 범위 재설정 (줌인)
     const bounds = new google.maps.LatLngBounds();
-    coords.forEach(p => bounds.extend(p));
-    const center = bounds.getCenter();
-    map.panTo(center);
+    coords.forEach(p => {
+        // 좌표 객체 호환성 처리 (함수형 vs 객체형)
+        const lat = typeof p.lat === 'function' ? p.lat() : p.lat;
+        const lng = typeof p.lng === 'function' ? p.lng() : p.lng;
+        bounds.extend({ lat, lng });
+    });
 
-    let currentZoom = map.getZoom();
-    let targetZoom = currentZoom + CONFIG.MAP_ZOOM_INCREMENT;
-    if (targetZoom > CONFIG.MAP_MAX_ZOOM) targetZoom = CONFIG.MAP_MAX_ZOOM;
-    map.setZoom(targetZoom);
+    // ✅ [핵심 수정] 패딩 값을 수정하여 사이드바에 가려지지 않게 함
+    // 사이드바가 왼쪽에 있으므로 left에 450px 여백을 줌
+    map.fitBounds(bounds, { 
+        top: 50, 
+        bottom: 50, 
+        left: 450,  // 사이드바 폭(400px) + 여유분
+        right: 50   // 오른쪽 여유분
+    });
 }
 
 
@@ -502,22 +496,54 @@ async function findAndDisplayRoute() {
                 origin: start,
                 destination: end,
                 travelMode: google.maps.TravelMode.TRANSIT,
-                transitOptions: (arrivalDateTime && !isNaN(arrivalDateTime)) ? { arrivalTime: arrivalDateTime } : undefined
+                transitOptions: (arrivalDateTime && !isNaN(arrivalDateTime)) ? { arrivalTime: arrivalDateTime } : undefined,
+                provideRouteAlternatives: true // ✅ [추가] 대체 경로(회색 경로)도 함께 요청
             };
 
-            directionsService.route(request, (result, status) => {
-                if (status === 'OK') {
-                    directionsRenderer.setDirections(result);
-                    displayGoogleRouteSummary(result.routes[0], arrivalDateTime);
+            // ✅ [수정] 렌더러 옵션 업데이트 (갈색 적용)
+            directionsRenderer.setOptions({
+                polylineOptions: {
+                    strokeColor: CONFIG.COLORS.TRANSIT, // 정의한 갈색 사용
+                    strokeWeight: 6,
+                    strokeOpacity: 0.8
+                }
+            });
 
-                    // 출발/도착 마커 표시
-                    const leg = result.routes[0].legs[0];
-                    const startLoc = leg.start_location;
-                    const endLoc = leg.end_location;
-                    addStartEndMarkers([
-                        { lat: startLoc.lat(), lng: startLoc.lng() },
-                        { lat: endLoc.lat(), lng: endLoc.lng() },
-                    ]);
+            directionsService.route(request, (result, status) => {
+            if (status === 'OK') {
+                result.routes.sort((a, b) => {
+                        const durationA = a.legs[0].duration.value;
+                        const durationB = b.legs[0].duration.value;
+                        return durationA - durationB;
+                    });
+
+                directionsRenderer.setDirections(result); // 지도에 모든 경로(메인+회색) 그리기
+
+                // 컨테이너 초기화 (목록을 새로 그림)
+                const container = document.getElementById('route-details-container');
+                container.innerHTML = '';
+
+                // ✅ [수정] 받아온 모든 경로에 대해 반복문 실행
+                result.routes.forEach((route, index) => {
+                    // 각 경로를 담을 개별 박스(wrapper) 생성 (순서 보장을 위해 미리 append)
+                    const routeWrapper = document.createElement('div');
+                    routeWrapper.id = `route-option-${index}`;
+                    routeWrapper.style.marginBottom = "15px"; // 경로 간 간격
+                    container.appendChild(routeWrapper);
+
+                    // 개별 경로 정보를 화면에 표시하는 함수 호출
+                    // (함수 시그니처를 변경해서 wrapper와 index를 넘겨줍니다)
+                    displayGoogleRouteSummary(route, arrivalDateTime, routeWrapper, index);
+                });
+
+                // (선택 사항) 출발/도착 마커는 첫 번째 경로 기준으로 표시
+                const leg = result.routes[0].legs[0];
+                addStartEndMarkers([
+                    { lat: leg.start_location.lat(), lng: leg.start_location.lng() },
+                    { lat: leg.end_location.lat(), lng: leg.end_location.lng() },
+                ]);
+                    
+                    // (addStartEndMarkers는 drawRoute 내부에서 자동으로 호출되므로 중복 제거)
                 } else {
                     const errorMsg = status === 'ZERO_RESULTS' 
                         ? '대중교통 경로를 찾을 수 없습니다. 다른 교통수단을 이용해보세요.'
@@ -533,12 +559,12 @@ async function findAndDisplayRoute() {
     }
 }
 
-// 통합 경로 그리기 함수 (도보, 자전거, 자동차 모두 지원)
+// 통합 경로 그리기 함수 (Google Maps 데이터 지원 추가)
 function drawRoute(data, color, routeType) {
     let path = [];
     
+    // 데이터 파싱
     if (routeType === 'tmap') {
-        // TMAP 데이터 (도보, 자동차)
         data.features.forEach(feature => {
             if (feature.geometry.type === "LineString") {
                 feature.geometry.coordinates.forEach(coord => {
@@ -547,36 +573,106 @@ function drawRoute(data, color, routeType) {
             }
         });
     } else if (routeType === 'ors') {
-        // ORS 데이터 (자전거)
-        if (!data || !data.features || !data.features[0]) {
-            console.error("❌ ORS 데이터가 올바르지 않습니다.", data);
-            return;
-        }
+        if (!data || !data.features || !data.features[0]) return;
         path = data.features[0].geometry.coordinates.map(coord => ({
             lng: coord[0],
             lat: coord[1],
         }));
+    } else if (routeType === 'google') { 
+        // 👈 [추가됨] Google Directions 데이터 처리
+        if (data.routes && data.routes[0] && data.routes[0].overview_path) {
+            data.routes[0].overview_path.forEach(p => {
+                path.push({ lat: p.lat(), lng: p.lng() });
+            });
+        }
     }
 
-    // 기존 폴리라인 제거
+    // 기존 경로 초기화
     if (customPolyline) customPolyline.setMap(null);
-    
-    // 새 경로 표시
-    customPolyline = new google.maps.Polyline({
+    if (customBorderPolyline) customBorderPolyline.setMap(null);
+
+    // 1️⃣ [테두리] 흰색
+    customBorderPolyline = new google.maps.Polyline({
         path,
-        strokeColor: color,
-        strokeOpacity: routeType === 'ors' ? 0.85 : 0.8,
-        strokeWeight: 6,
+        strokeColor: "white",
+        strokeOpacity: 1,
+        strokeWeight: 10,
+        zIndex: 50,
         map,
     });
 
-    // 출발/도착 마커 추가
-    addStartEndMarkers(path);
+    // 2️⃣ [메인] 노란색(TRANSIT) 등 지정된 색상 + 화살표
+    customPolyline = new google.maps.Polyline({
+        path,
+        strokeColor: color,
+        strokeOpacity: 1,
+        strokeWeight: 6,
+        zIndex: 51,
+        map,
+    });
 
-    // 지도 범위 자동 조정
+    addStartEndMarkers(path);
+    
     const bounds = new google.maps.LatLngBounds();
     path.forEach(p => bounds.extend(p));
     map.fitBounds(bounds);
+}
+
+// 🔀 대중교통 다중 경로 렌더링 및 클릭 스위칭 함수
+function renderTransitResult(result, activeIndex, arrivalDateTime) {
+    // 1. 기존 비활성 경로(회색 선들) 모두 지우기
+    alternativePolylines.forEach(poly => poly.setMap(null));
+    alternativePolylines = [];
+
+    // 2. 모든 추천 경로 반복
+    result.routes.forEach((route, index) => {
+        if (index === activeIndex) {
+            // ✅ 선택된 경로 (주인공): 예쁘게 그리기 (갈색 + 테두리 + 화살표)
+            // drawRoute 함수가 내부적으로 customPolyline을 갱신하고 지도 범위를 맞춤
+            drawRoute({ routes: [route] }, CONFIG.COLORS.TRANSIT, 'google');
+            
+            // 정보창(Summary) 업데이트
+            displayGoogleRouteSummary(route, arrivalDateTime);
+            
+        } else {
+            // ⚪ 선택되지 않은 경로 (조연): 회색 실선으로 그리기
+            const path = route.overview_path;
+            
+            // 클릭 범위를 넓히기 위해 투명하고 두꺼운 선(Click Target)을 먼저 그림 (선택사항)
+            const clickTargetLine = new google.maps.Polyline({
+                path: path,
+                strokeColor: "transparent",
+                strokeOpacity: 0,
+                strokeWeight: 20, // 클릭 판정 범위 넓게
+                zIndex: 11,
+                map: map
+            });
+            alternativePolylines.push(clickTargetLine);
+
+            // 눈에 보이는 회색 선
+            const grayLine = new google.maps.Polyline({
+                path: path,
+                strokeColor: CONFIG.COLORS.ALTERNATIVE,
+                strokeOpacity: 0.6,
+                strokeWeight: 6,
+                zIndex: 10, // 활성 경로(50)보다 아래에
+                map: map,
+                clickable: false // 클릭 이벤트는 clickTargetLine이 받음 (또는 얘한테 직접 줘도 됨)
+            });
+            alternativePolylines.push(grayLine);
+
+            // 🖱️ 클릭 이벤트: 회색 선을 누르면 해당 경로가 '주인공'이 됨
+            const switchToThisRoute = () => {
+                console.log(`${index + 1}번 경로 선택됨`);
+                renderTransitResult(result, index, arrivalDateTime);
+            };
+
+            // 선 자체 클릭 시 전환
+            grayLine.setOptions({ clickable: true }); 
+            grayLine.addListener('click', switchToThisRoute);
+            clickTargetLine.addListener('click', switchToThisRoute);
+        }
+    });
 }
 
 
@@ -887,28 +983,19 @@ async function displayOrsRouteSummary(orsData, arrivalDateTimeStr) {
 
 
 
-// 대중교통 요약 + 출발/도착 주소 표시
-async function displayGoogleRouteSummary(route, arrivalDateTime) {
-    const container = document.getElementById('route-details-container');
-    container.innerHTML = '';
+async function displayGoogleRouteSummary(route, arrivalDateTime, targetWrapper, index) {
     const leg = route.legs[0];
-
-    const startLoc = leg.start_location;
-    const endLoc = leg.end_location;
+    
+    // 1. 주소 및 시간 정보 추출
     const [startAddress, endAddress] = await Promise.all([
-        getAddressFromCoords(startLoc.lat(), startLoc.lng()),
-        getAddressFromCoords(endLoc.lat(), endLoc.lng())
+        getAddressFromCoords(leg.start_location.lat(), leg.start_location.lng()),
+        getAddressFromCoords(leg.end_location.lat(), leg.end_location.lng())
     ]);
 
-    // duration.text에서 "분" 추출
-    const durationMatch = leg.duration.text.match(/\d+/);
-    const totalTime = durationMatch ? durationMatch[0] : leg.duration.text;
-    
-    // distance.text에서 "km" 추출
+    const totalTime = Math.round(leg.duration.value / 60); // 분 단위 변환
     const distanceMatch = leg.distance.text.match(/[\d.]+/);
     const totalDistance = distanceMatch ? distanceMatch[0] : leg.distance.text;
 
-    // 권장 출발 시간 계산
     const recommendedStartTime = arrivalDateTime 
         ? TimeUtils.getRecommendedStartTime(arrivalDateTime.toISOString(), leg.duration.value)
         : null;
@@ -916,6 +1003,29 @@ async function displayGoogleRouteSummary(route, arrivalDateTime) {
         ? `<div class="route-card-footer"><i class="fa-solid fa-clock"></i><span>${recommendedStartTime} 출발 권장</span></div>`
         : '';
 
+    // 2. 전체를 감싸는 박스(targetWrapper) 스타일링
+    targetWrapper.className = 'route-wrapper-item';
+    targetWrapper.style.borderRadius = '12px';
+    targetWrapper.style.padding = '15px';
+    targetWrapper.style.marginBottom = '20px';
+    targetWrapper.style.backgroundColor = '#fff';
+    targetWrapper.style.transition = 'all 0.2s ease';
+    targetWrapper.style.cursor = 'pointer';
+    targetWrapper.style.border = '1px solid #eee';
+
+    // 3. 내용물 생성 및 추가
+
+    // (1) 타이틀
+    const titleDiv = document.createElement('div');
+    titleDiv.innerHTML = index === 0 
+        ? `<strong><i class="fa-solid fa-star" style="color:#FFD700;"></i> 추천 경로 (최단 시간)</strong>` 
+        : `<strong>경로 ${index + 1}</strong>`;
+    titleDiv.style.marginBottom = "10px";
+    titleDiv.style.color = "#333";
+    titleDiv.style.fontSize = "1.1em";
+    targetWrapper.appendChild(titleDiv);
+
+    // (2) 요약 카드
     const summaryCard = createRouteSummaryCard({
         mode: 'transit',
         totalTime,
@@ -923,14 +1033,20 @@ async function displayGoogleRouteSummary(route, arrivalDateTime) {
         startAddress,
         endAddress,
         taxiFare: 0,
-        startTimeHtml: startTimeHtml
+        startTimeHtml
     });
-    container.appendChild(summaryCard);
+    summaryCard.style.border = 'none';
+    summaryCard.style.boxShadow = 'none';
+    summaryCard.style.padding = '0'; 
+    summaryCard.style.margin = '0';
+    targetWrapper.appendChild(summaryCard);
 
-    // 단계별 안내 (클릭 하이라이트)
+    // (3) 상세 단계 (Steps)
     const stepsContainer = document.createElement('div');
     stepsContainer.className = 'route-steps';
-    leg.steps.forEach((step, idx) => {
+    stepsContainer.style.marginTop = "15px";
+    
+    leg.steps.forEach((step, stepIdx) => {
         const stepDiv = document.createElement('div');
         stepDiv.className = 'step';
         let iconHtml = '<i class="fa-solid fa-person-walking"></i>';
@@ -940,19 +1056,84 @@ async function displayGoogleRouteSummary(route, arrivalDateTime) {
         stepDiv.innerHTML = `
           ${iconHtml}
           <div class="step-details">
-              <div class="step-instructions">${idx + 1}. ${step.instructions}</div>
+              <div class="step-instructions">${stepIdx + 1}. ${step.instructions}</div>
               <div class="step-meta">${step.distance.text} (${step.duration.text})</div>
           </div>`;
-        stepDiv.addEventListener('click', () => {
+          
+        // ✅ [수정됨] 개별 단계 클릭 시 좌표 추출 로직 강화
+        stepDiv.addEventListener('click', (e) => {
+            e.stopPropagation(); 
+            
+            // 1. 이 경로 활성화
+            activateRouteWrapper(); 
+            
+            // 2. 단계 하이라이트 UI
             document.querySelectorAll(".step").forEach(el => el.classList.remove("active"));
             stepDiv.classList.add("active");
-            const decodedPath = google.maps.geometry.encoding.decodePath(step.polyline.points);
-            const coords = decodedPath.map(p => ({ lat: p.lat(), lng: p.lng() }));
-            highlightRouteSegment(coords, customPolyline, step);
+
+            // 3. 📍 [최종 수정] 좌표 추출 (만능 해독기 사용)
+            let pathCoords = [];
+            
+            // (1) 이미 해독된 path가 있으면 사용
+            if (step.path && Array.isArray(step.path)) {
+                pathCoords = step.path;
+            } 
+            // (2) lat_lngs가 있으면 사용
+            else if (step.lat_lngs && Array.isArray(step.lat_lngs)) {
+                pathCoords = step.lat_lngs;
+            }
+            // (3) 대중교통용: 인코딩된 문자열을 직접 해독 (라이브러리 불필요!)
+            else if (step.polyline && step.polyline.points) {
+                pathCoords = decodePolyline(step.polyline.points);
+            }
+
+            // 좌표가 확보되었으면 줌인 실행
+            if (pathCoords && pathCoords.length > 0) {
+                // 좌표 객체 표준화 (함수형 -> 객체형)
+                const coords = pathCoords.map(p => ({ 
+                    lat: typeof p.lat === 'function' ? p.lat() : p.lat, 
+                    lng: typeof p.lng === 'function' ? p.lng() : p.lng 
+                }));
+                highlightRouteSegment(coords, customPolyline, step);
+            } else {
+                console.warn("⚠️ 이 구간의 경로 데이터를 찾을 수 없습니다.");
+            }
         });
         stepsContainer.appendChild(stepDiv);
     });
-    container.appendChild(stepsContainer);
+    targetWrapper.appendChild(stepsContainer);
+
+    // 4. 경로 활성화 함수
+    const HIGHLIGHT_COLOR = "#8B4513"; 
+
+    function activateRouteWrapper() {
+        document.querySelectorAll('.route-wrapper-item').forEach(el => {
+            el.style.border = '1px solid #eee';
+            el.style.boxShadow = 'none';
+            el.style.backgroundColor = '#fff';
+        });
+
+        targetWrapper.style.border = `3px solid ${HIGHLIGHT_COLOR}`;
+        targetWrapper.style.boxShadow = "0 6px 12px rgba(139, 69, 19, 0.15)";
+        targetWrapper.style.backgroundColor = '#fffcf5'; 
+
+        directionsRenderer.setRouteIndex(index);
+    }
+
+    // 5. 박스 전체 클릭 이벤트
+    targetWrapper.addEventListener('click', () => {
+        activateRouteWrapper();
+        if (route.bounds) {
+            map.fitBounds(route.bounds);
+        }
+    });
+
+    // 6. 초기 상태 설정
+    if (index === 0) {
+        targetWrapper.style.border = `3px solid ${HIGHLIGHT_COLOR}`;
+        targetWrapper.style.boxShadow = "0 6px 12px rgba(139, 69, 19, 0.15)";
+        targetWrapper.style.backgroundColor = '#fffcf5';
+    }
 }
 
 
@@ -983,6 +1164,39 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSwitch('date-switch-header');
     setupSwitch('time-switch-header');
 });
+
+// [추가] 구글 경로 문자열 해독 함수 (라이브러리 없이 작동)
+function decodePolyline(encoded) {
+    if (!encoded) return [];
+    var poly = [];
+    var index = 0, len = encoded.length;
+    var lat = 0, lng = 0;
+
+    while (index < len) {
+        var b, shift = 0, result = 0;
+        do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        var dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lat += dlat;
+
+        shift = 0;
+        result = 0;
+        do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        var dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+        lng += dlng;
+
+        var p = { lat: lat / 1e5, lng: lng / 1e5 };
+        poly.push(p);
+    }
+    return poly;
+}
 
 /**
  * 서버에 현재 로그인 상태를 확인하고 UI를 업데이트하는 함수
