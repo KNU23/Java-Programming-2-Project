@@ -85,6 +85,7 @@ function addStartEndMarkers(path) {
 }
 
 
+// ✅ [수정됨] 지도 이동을 부드럽게 개선한 highlightRouteSegment 함수
 function highlightRouteSegment(coords, parentPolyline = null, feature = null) {
     if (!coords || !coords.length) return;
 
@@ -101,30 +102,33 @@ function highlightRouteSegment(coords, parentPolyline = null, feature = null) {
 
     highlightPolyline = new google.maps.Polyline({
         path: coords,
-        strokeColor: "#00FF00", // 밝은 초록색 (잘 보이게)
+        strokeColor: "#00FF00", // 밝은 초록색
         strokeOpacity: 1.0,
-        strokeWeight: 12,       // 두께를 더 두껍게
+        strokeWeight: 12,       // 두께 강조
         zIndex: 9999,
         map,
     });
     currentHighlightedStep = feature;
 
-    // 3. 지도 범위 재설정 (줌인)
+    // 3. 지도 범위 재설정 (부드러운 애니메이션 적용)
     const bounds = new google.maps.LatLngBounds();
     coords.forEach(p => {
-        // 좌표 객체 호환성 처리 (함수형 vs 객체형)
         const lat = typeof p.lat === 'function' ? p.lat() : p.lat;
         const lng = typeof p.lng === 'function' ? p.lng() : p.lng;
         bounds.extend({ lat, lng });
     });
 
-    // ✅ [핵심 수정] 패딩 값을 수정하여 사이드바에 가려지지 않게 함
-    // 사이드바가 왼쪽에 있으므로 left에 450px 여백을 줌
+    // ✨ [핵심 변경] 갑작스러운 점프를 방지하기 위한 로직
+    // 먼저 중심점으로 부드럽게 이동(Pan)합니다.
+    map.panTo(bounds.getCenter());
+
+    // 줌 레벨 조정 (fitBounds)
+    // padding을 적용하여 사이드바에 가려지지 않게 합니다.
     map.fitBounds(bounds, { 
-        top: 50, 
-        bottom: 50, 
-        left: 450,  // 사이드바 폭(400px) + 여유분
-        right: 50   // 오른쪽 여유분
+        top: 100,      // 상하 여백을 조금 더 넉넉하게 줌
+        bottom: 100, 
+        left: 450,     // 사이드바 폭 고려
+        right: 50 
     });
 }
 
@@ -627,23 +631,30 @@ function renderTransitResult(result, activeIndex, arrivalDateTime) {
     // 2. 모든 추천 경로 반복
     result.routes.forEach((route, index) => {
         if (index === activeIndex) {
-            // ✅ 선택된 경로 (주인공): 예쁘게 그리기 (갈색 + 테두리 + 화살표)
-            // drawRoute 함수가 내부적으로 customPolyline을 갱신하고 지도 범위를 맞춤
+            // ✅ 선택된 경로 (주인공): 예쁘게 그리기
             drawRoute({ routes: [route] }, CONFIG.COLORS.TRANSIT, 'google');
             
-            // 정보창(Summary) 업데이트
-            displayGoogleRouteSummary(route, arrivalDateTime);
+            // [수정 전] 에러 발생 코드: 인자가 부족함
+            // displayGoogleRouteSummary(route, arrivalDateTime); 
+
+            // [수정 후] ✅ 사이드바의 해당 경로 박스를 강제로 클릭하여 활성화 효과 주기
+            const targetSidebarItem = document.getElementById(`route-option-${index}`);
+            if (targetSidebarItem) {
+                // 사이드바 아이템의 클릭 이벤트를 트리거하여 스타일 변경 및 스크롤 실행
+                targetSidebarItem.click(); 
+                targetSidebarItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
             
         } else {
             // ⚪ 선택되지 않은 경로 (조연): 회색 실선으로 그리기
             const path = route.overview_path;
             
-            // 클릭 범위를 넓히기 위해 투명하고 두꺼운 선(Click Target)을 먼저 그림 (선택사항)
+            // 클릭 범위를 넓히기 위한 투명 선
             const clickTargetLine = new google.maps.Polyline({
                 path: path,
                 strokeColor: "transparent",
                 strokeOpacity: 0,
-                strokeWeight: 20, // 클릭 판정 범위 넓게
+                strokeWeight: 20,
                 zIndex: 11,
                 map: map
             });
@@ -655,19 +666,18 @@ function renderTransitResult(result, activeIndex, arrivalDateTime) {
                 strokeColor: CONFIG.COLORS.ALTERNATIVE,
                 strokeOpacity: 0.6,
                 strokeWeight: 6,
-                zIndex: 10, // 활성 경로(50)보다 아래에
+                zIndex: 10,
                 map: map,
-                clickable: false // 클릭 이벤트는 clickTargetLine이 받음 (또는 얘한테 직접 줘도 됨)
+                clickable: false
             });
             alternativePolylines.push(grayLine);
 
-            // 🖱️ 클릭 이벤트: 회색 선을 누르면 해당 경로가 '주인공'이 됨
+            // 🖱️ 클릭 이벤트
             const switchToThisRoute = () => {
                 console.log(`${index + 1}번 경로 선택됨`);
                 renderTransitResult(result, index, arrivalDateTime);
             };
 
-            // 선 자체 클릭 시 전환
             grayLine.setOptions({ clickable: true }); 
             grayLine.addListener('click', switchToThisRoute);
             clickTargetLine.addListener('click', switchToThisRoute);
@@ -759,30 +769,38 @@ async function displayTmapRouteSummary(tmapData, arrivalDateTimeStr) {
     stepsContainer.className = 'route-steps';
 
     tmapData.features.forEach((feature, idx) => {
-        if (feature.geometry.type === "Point" && feature.properties.description) {
+        const props = feature.properties;
+        const geom = feature.geometry;
+
+        // ✅ [수정됨] Point(빨간 마커)는 건너뛰고, LineString(이동 구간)만 표시
+        if (geom.type === "LineString") {
+            const roadName = props.name ? `${props.name} 따라 이동` : "길을 따라 이동";
+            const distance = props.distance ? `${props.distance}m` : "";
+            const time = props.time ? `${Math.round(props.time/60)}분` : "";
+            
+            // 거리가 0이거나 정보가 너무 부실하면 건너뛰기
+            if (props.distance === 0) return;
+
             const stepDiv = document.createElement('div');
             stepDiv.className = 'step';
             stepDiv.innerHTML = `
-                <i class="fa-solid fa-person-walking"></i>
+                <i class="fa-solid fa-arrow-up" style="color:#666;"></i>
                 <div class="step-details">
-                    <div class="step-instructions">${idx + 1}. ${feature.properties.description}</div>
+                    <div class="step-instructions">${roadName}</div>
+                    <div class="step-meta">${distance} ${time ? '/ ' + time : ''}</div>
                 </div>
             `;
 
-            // 클릭 시 거리 기반으로 가장 가까운 구간(LineString)을 찾아 하이라이트
             stepDiv.addEventListener('click', () => {
                 document.querySelectorAll(".step").forEach(el => el.classList.remove("active"));
                 stepDiv.classList.add("active");
 
-                const segment = findClosestLineString(feature, tmapData);
-                if (segment && segment.geometry?.coordinates) {
-                    const coords = segment.geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
-                    highlightRouteSegment(coords, tmapData, feature);
-                } else {
-                    console.warn("⚠️ 근접한 경로(LineString)를 찾지 못했습니다.");
-                }
-            });
+                // ✨ [추가] 클릭 시 사이드바 리스트가 부드럽게 중앙으로 정렬됨
+                stepDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
+                const coords = geom.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+                highlightRouteSegment(coords, tmapData, feature);
+            });
             stepsContainer.appendChild(stepDiv);
         }
     });
@@ -835,7 +853,6 @@ async function displayTmapCarRouteSummary(tmapData, arrivalDateTime) {
         }
     }
 
-    // 출발/도착 좌표 추출 및 주소 변환
     const coords = [];
     tmapData.features.forEach(f => {
         if (f.geometry.type === "LineString") {
@@ -864,24 +881,37 @@ async function displayTmapCarRouteSummary(tmapData, arrivalDateTime) {
     // 단계별 안내
     const stepsContainer = document.createElement('div');
     stepsContainer.className = 'route-steps';
+    
     tmapData.features.forEach((feature, idx) => {
-        if (feature.geometry.type === "Point" && feature.properties.description) {
+        const props = feature.properties;
+        const geom = feature.geometry;
+
+        // ✅ [수정됨] Point(빨간 동그라미)는 건너뛰고, LineString(도로 주행)만 표시
+        if (geom.type === "LineString") {
+            const roadName = props.name ? `${props.name}` : "도로 주행";
+            const distance = props.distance ? `${props.distance}m` : "";
+            const time = props.time ? `${Math.round(props.time/60)}분` : "";
+
+            if (props.distance === 0) return;
+
             const stepDiv = document.createElement('div');
             stepDiv.className = 'step';
             stepDiv.innerHTML = `
-                <i class="fa-solid fa-car"></i>
+                <i class="fa-solid fa-road" style="color:#666;"></i>
                 <div class="step-details">
-                    <div class="step-instructions">${idx + 1}. ${feature.properties.description}</div>
+                    <div class="step-instructions">${roadName}</div>
+                    <div class="step-meta">${distance} ${time ? '/ ' + time : ''}</div>
                 </div>`;
+            
             stepDiv.addEventListener('click', () => {
                 document.querySelectorAll(".step").forEach(el => el.classList.remove("active"));
                 stepDiv.classList.add("active");
 
-                const segment = findClosestLineString(feature, tmapData);
-                if (segment?.geometry?.coordinates) {
-                    const coords = segment.geometry.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
-                    highlightRouteSegment(coords, customPolyline, feature);
-                }
+                // ✨ [추가] 사이드바 부드러운 스크롤
+                stepDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                const coords = geom.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+                highlightRouteSegment(coords, customPolyline, feature);
             });
             stepsContainer.appendChild(stepDiv);
         }
@@ -967,6 +997,9 @@ async function displayOrsRouteSummary(orsData, arrivalDateTimeStr) {
         stepDiv.addEventListener('click', () => {
             document.querySelectorAll(".step").forEach(el => el.classList.remove("active"));
             stepDiv.classList.add("active");
+
+            // ✨ [추가] 사이드바 부드러운 스크롤
+            stepDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
             if (step.way_points) {
                 const [startIdx, endIdx] = step.way_points;
@@ -1060,45 +1093,66 @@ async function displayGoogleRouteSummary(route, arrivalDateTime, targetWrapper, 
               <div class="step-meta">${step.distance.text} (${step.duration.text})</div>
           </div>`;
           
-        // ✅ [수정됨] 개별 단계 클릭 시 좌표 추출 로직 강화
+        // ✅ [수정됨] 대중교통 좌표 추출 로직 강화 (만능형)
         stepDiv.addEventListener('click', (e) => {
             e.stopPropagation(); 
             
             // 1. 이 경로 활성화
             activateRouteWrapper(); 
             
-            // 2. 단계 하이라이트 UI
+            // 2. 단계 하이라이트 UI & 사이드바 스크롤
             document.querySelectorAll(".step").forEach(el => el.classList.remove("active"));
             stepDiv.classList.add("active");
+            stepDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-            // 3. 📍 [최종 수정] 좌표 추출 (만능 해독기 사용)
+            // 3. 📍 [핵심 수정] 좌표 데이터 강제 추출
             let pathCoords = [];
-            
-            // (1) 이미 해독된 path가 있으면 사용
-            if (step.path && Array.isArray(step.path)) {
+
+            // 우선순위 1: step.path (가장 정확함)
+            if (step.path && Array.isArray(step.path) && step.path.length > 0) {
                 pathCoords = step.path;
             } 
-            // (2) lat_lngs가 있으면 사용
-            else if (step.lat_lngs && Array.isArray(step.lat_lngs)) {
+            // 우선순위 2: step.lat_lngs (구버전 호환)
+            else if (step.lat_lngs && Array.isArray(step.lat_lngs) && step.lat_lngs.length > 0) {
                 pathCoords = step.lat_lngs;
             }
-            // (3) 대중교통용: 인코딩된 문자열을 직접 해독 (라이브러리 불필요!)
+            // 우선순위 3: step.polyline (인코딩된 문자열)
             else if (step.polyline && step.polyline.points) {
                 pathCoords = decodePolyline(step.polyline.points);
             }
+            // 우선순위 4: 대중교통의 경우 transit_details 안에 정보가 있을 수 있음
+            else if (step.transit_details) {
+                // 출발지와 도착지만이라도 연결해서 선을 만듦
+                pathCoords = [
+                    step.start_location,
+                    step.end_location
+                ];
+            }
+            // 우선순위 5: 그래도 없으면 출발/도착점 사용
+            else {
+                pathCoords = [step.start_location, step.end_location];
+            }
 
-            // 좌표가 확보되었으면 줌인 실행
+            // 4. 추출된 좌표로 줌인 실행
             if (pathCoords && pathCoords.length > 0) {
                 // 좌표 객체 표준화 (함수형 -> 객체형)
                 const coords = pathCoords.map(p => ({ 
                     lat: typeof p.lat === 'function' ? p.lat() : p.lat, 
                     lng: typeof p.lng === 'function' ? p.lng() : p.lng 
                 }));
+
+                // 좌표가 2개 미만(점 1개)일 경우 줌이 안되므로 강제로 2개로 만듦 (약간의 오차 추가)
+                if (coords.length === 1) {
+                    coords.push({ lat: coords[0].lat + 0.0001, lng: coords[0].lng + 0.0001 });
+                }
+
+                console.log(`줌 실행: 좌표 ${coords.length}개 발견`); // 디버깅용 로그
                 highlightRouteSegment(coords, customPolyline, step);
             } else {
                 console.warn("⚠️ 이 구간의 경로 데이터를 찾을 수 없습니다.");
             }
         });
+
         stepsContainer.appendChild(stepDiv);
     });
     targetWrapper.appendChild(stepsContainer);
@@ -1163,6 +1217,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupSwitch('date-switch-header');
     setupSwitch('time-switch-header');
+
+    // 4. [추가] 키보드 방향키(→)로 다음 경로 탐색
+    document.addEventListener('keydown', (e) => {
+        // 오른쪽 화살표 키가 눌렸을 때
+        if (e.key === 'ArrowRight') {
+            const activeStep = document.querySelector('.step.active');
+            
+            if (activeStep) {
+                // 현재 활성화된 스텝이 있으면 다음 스텝 찾기
+                const nextStep = activeStep.nextElementSibling;
+                if (nextStep && nextStep.classList.contains('step')) {
+                    nextStep.click(); // 다음 스텝 클릭 (지도 이동 및 하이라이트 트리거)
+                    nextStep.scrollIntoView({ behavior: 'smooth', block: 'center' }); // 사이드바 스크롤 이동
+                }
+            } else {
+                // 활성화된 스텝이 없으면 첫 번째 스텝 선택
+                const firstStep = document.querySelector('.step');
+                if (firstStep) {
+                    firstStep.click();
+                    firstStep.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+        
+        // (선택사항) 왼쪽 화살표 키로 이전 경로 탐색
+        if (e.key === 'ArrowLeft') {
+            const activeStep = document.querySelector('.step.active');
+            if (activeStep) {
+                const prevStep = activeStep.previousElementSibling;
+                if (prevStep && prevStep.classList.contains('step')) {
+                    prevStep.click();
+                    prevStep.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+    });
 });
 
 // [추가] 구글 경로 문자열 해독 함수 (라이브러리 없이 작동)
