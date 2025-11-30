@@ -429,8 +429,9 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
                     logToServer("⚠️ 알람 저장 실패: " + data.error);
                 } else {
                     logToServer("✅ 출발 알람이 성공적으로 예약되었습니다!");
-                    // 사용자에게 알림 (선택 사항)
-                    // alert("출발 시간에 맞춰 카카오톡 알림을 보내드립니다!");
+                    
+                    // ✅ [수정] 주석 해제 (사용자에게 팝업으로 알려주기)
+                    alert("출발 시간에 맞춰 카카오톡 알림을 보내드립니다!");
                 }
             })
             .catch(err => logToServer("❌ 알람 저장 요청 중 오류 발생"));
@@ -502,8 +503,8 @@ async function findAndDisplayRoute() {
     let arrivalDateTimeStr = null;  // TMAP용 문자열
 
     // URL 파라미터 우선, 없으면 Input 값 사용
-    const finalDate = arrivalDateVal || document.getElementById('arrival-date-header').value;
-    const finalTime = arrivalTimeVal || document.getElementById('arrival-time-header').value;
+    const finalDate = arrivalDateVal; 
+    const finalTime = arrivalTimeVal; 
     
     if (finalDate && finalTime) {
         const cleanTime = finalTime.substring(0, 5); // HH:mm
@@ -514,7 +515,7 @@ async function findAndDisplayRoute() {
 
         console.log("설정된 도착 시간:", arrivalDateTime.toLocaleString());
     } else {
-        console.log("도착 시간 미설정 (현재 시간 기준 검색)");
+        console.log("도착 시간 미설정 (현재 시간 기준 검색 - 알람 저장 안 함)");
     }
 
     directionsRenderer.setDirections({ routes: [] });

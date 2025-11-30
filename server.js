@@ -25,6 +25,13 @@ const pool = new Pool({
         rejectUnauthorized: false 
     }
 });
+
+// 🔥 [추가할 코드] DB 연결될 때마다 한국 시간대로 설정 강제하기
+pool.on('connect', (client) => {
+    client.query("SET TIME ZONE 'Asia/Seoul'", (err) => {
+        if (err) console.error('[DB] Timezone 설정 실패:', err);
+    });
+});
 console.log('PostgreSQL DB 연결 풀 생성됨');
 
 const app = express();
