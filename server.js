@@ -325,14 +325,14 @@ app.get('/:page', (req, res) => {
     }
 });
 
+// ✅ 1. 카카오톡 알림 전송 함수 (최적화됨)
 async function sendKakaoTalkNotification(search) {
-    console.log(`[알람] 유저(ID: ${search.user_id})에게 카톡 메시지 전송 시도...`);
-    console.log(`[알람] DB에서 가져온 Refresh Token: ${search.kakao_refresh_token ? '있음' : '없음!'}`);
-    
+    console.log(`[알람 시작] 유저(ID: ${search.user_id})에게 출발 알림 전송 시도`);
+
     let newAccessToken = '';
 
+    // 1️⃣ 토큰 갱신 시도
     try {
-        // 1. 저장된 Refresh Token으로 새 Access Token 발급
         const tokenUrl = 'https://kauth.kakao.com/oauth/token';
         const tokenParams = new URLSearchParams({
             grant_type: 'refresh_token',
@@ -345,35 +345,38 @@ async function sendKakaoTalkNotification(search) {
         });
 
         newAccessToken = tokenRes.data.access_token;
-        console.log('[알람] ✅ 카카오 토큰 갱신 성공!'); // [진단 로그 1]
-        
+        // 갱신된 리프레시 토큰이 있다면 DB 업데이트 (선택 사항)
     } catch (error) {
-        // [진단 로그 2] (가장 중요)
-        console.error(`[알람 실패] ❌ 카카오 토큰 갱신 실패 (유저 ID: ${search.user_id}):`, error.response?.data);
+        console.error(`[알람 실패] ❌ 토큰 갱신 실패 (유저 ID: ${search.user_id}) - 알람 처리 완료로 간주`);
+        // 토큰이 만료되어 보낼 수 없으므로, 계속 재시도하지 않게 true로 처리
         await pool.query('UPDATE searches SET notification_sent = true WHERE id = $1', [search.id]);
         return; 
     }
 
+    // 2️⃣ 메시지 전송
     try {
-        // 2. 새로 발급받은 Access Token으로 "나에게 보내기" API 호출
         const messageUrl = 'https://kapi.kakao.com/v2/api/talk/memo/default/send';
         
+        // 도착 예정 시간 포맷팅 (예: 14:30)
+        const arrivalTimeObj = new Date(search.desired_arrival_time);
+        const arrivalTimeStr = `${arrivalTimeObj.getHours()}시 ${arrivalTimeObj.getMinutes()}분`;
+
         const textMessage = 
-`[출발 알림]
-${search.end_address}에 ${new Date(search.desired_arrival_time).toLocaleTimeString('ko-KR')} 도착 예정
+`[🚗 출발 알림]
+약속 시간인 ${arrivalTimeStr}에 도착하려면 지금 출발해야 합니다!
 
-지금 출발하셔야 합니다!
-
-- 출발지: ${search.start_address}
-- 교통수단: ${search.mode}`;
+- 목적지: ${search.end_address}
+- 예상 소요시간: 약 ${Math.round(search.route_data_json.features[0].properties.totalTime / 60)}분`;
 
         const messagePayload = {
-                object_type: 'text',
-                text: textMessage,
-                link: {
-                    web_url: `https://javamap.azurewebsites.net?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=${search.mode}&date=${new Date(search.desired_arrival_time).toISOString().split('T')[0]}&time=${new Date(search.desired_arrival_time).toTimeString().substring(0,5)}`,
-                    mobile_web_url: `https://javamap.azurewebsites.net?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=${search.mode}&date=${new Date(search.desired_arrival_time).toISOString().split('T')[0]}&time=${new Date(search.desired_arrival_time).toTimeString().substring(0,5)}`
-                }
+            object_type: 'text',
+            text: textMessage,
+            link: {
+                // 모바일에서 클릭 시 바로 길안내 결과 페이지로 이동
+                web_url: `https://javamap.azurewebsites.net/results.html?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=DRIVING&date=${arrivalTimeObj.toISOString().split('T')[0]}&time=${arrivalTimeObj.toTimeString().substring(0,5)}`,
+                mobile_web_url: `https://javamap.azurewebsites.net/results.html?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=DRIVING&date=${arrivalTimeObj.toISOString().split('T')[0]}&time=${arrivalTimeObj.toTimeString().substring(0,5)}`
+            },
+            button_title: "경로 확인하기"
         };
 
         await axios.post(messageUrl, new URLSearchParams({ template_object: JSON.stringify(messagePayload) }).toString(), {
@@ -383,42 +386,45 @@ ${search.end_address}에 ${new Date(search.desired_arrival_time).toLocaleTimeStr
             }
         });
 
-        // 3. 알람 발송 성공
+        // 3️⃣ 성공 처리 (가장 중요: 알람 보냈음을 DB에 기록)
         await pool.query('UPDATE searches SET notification_sent = true WHERE id = $1', [search.id]);
-        console.log(`[알람 성공] ✅ 유저(ID: ${search.user_id})에게 카톡 메시지 전송 완료!`); // [진단 로그 3]
+        console.log(`[알람 성공] ✅ 메시지 전송 완료 (ID: ${search.id})`);
 
     } catch (error) {
-        // [진단 로그 4]
-        console.error(`[알람 실패] ❌ 카톡 메시지 전송 실패 (유저 ID: ${search.user_id}):`, error.response?.data || error.message);
+        console.error(`[알람 실패] ❌ 메시지 전송 중 에러:`, error.response?.data || error.message);
+        // 에러가 나도 재발송 방지를 위해 true로 할지, 재시도할지 결정. 
+        // 여기서는 무한 루프 방지를 위해 true로 처리합니다.
         await pool.query('UPDATE searches SET notification_sent = true WHERE id = $1', [search.id]);
     }
 }
 
-// 매 분마다 실행되는 스케줄러
+// ✅ 2. 스케줄러 (매 분 실행)
 cron.schedule('* * * * *', async () => {
-    console.log('[CRON] 알람 보낼 내역 확인 중...');
+    // console.log('[CRON] 출발 시간 체크 중...'); 
     
     try {
-        // 현재 시간 1분 이내에 출발해야 하고 아직 알람이 안 간 내역 조회
+        // "현재 시간(NOW)이 출발 시간(calculated_departure_time)을 지났고,
+        // 아직 알람을 보내지 않았으며(false),
+        // 출발 시간이 지난 지 10분 이내인 건"을 조회 (너무 오래된 건 무시)
         const res = await pool.query(
             `SELECT s.*, u.kakao_id, u.kakao_refresh_token
              FROM searches s
              JOIN users u ON s.user_id = u.id
              WHERE s.calculated_departure_time <= NOW()
-               AND s.calculated_departure_time >= NOW() - INTERVAL '5 minute' -- 5분 지연까지 허용
+               AND s.calculated_departure_time >= NOW() - INTERVAL '10 minute'
                AND s.notification_sent = false`
         );
 
         if (res.rows.length > 0) {
-            console.log(`[CRON] ${res.rows.length}개의 알람 발송 시작...`);
+            console.log(`[CRON] 🔔 알람 대상 ${res.rows.length}건 발견! 전송 시작...`);
             for (const search of res.rows) {
-                // 5단계: 카카오톡 메시지 전송 로직
+                // 비동기로 보내되, 순차 처리를 위해 await 사용
                 await sendKakaoTalkNotification(search); 
             }
         }
 
     } catch (error) {
-        console.error('[CRON] 스케줄러 작업 실패:', error);
+        console.error('[CRON] 스케줄러 에러:', error);
     }
 });
 

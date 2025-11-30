@@ -399,20 +399,46 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
         bestRouteData = await fallbackResponse.json();
     }
 
-    // [여기 추가] 이진 탐색으로 찾은 '최종 결과'를 DB에 저장하기 위해 한 번 더 호출
+// ✅ [수정] 최종 결과 DB 저장 로직 (알람 예약)
+    // 조건: 최적 경로가 있고, 계산된 출발 시간이 존재하며, 로그인 상태일 때(서버가 체크)
     if (bestRouteData && bestRouteData.recommendedDepartureTime) {
         const bestTimeStr = TimeUtils.formatToTmapTime(bestRouteData.recommendedDepartureTime);
         
-        // save=true (기본값)로 호출하여 DB에 저장
-        const saveUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${bestTimeStr}&startAddress=${encodeURIComponent(urlParams.get('start'))}&endAddress=${encodeURIComponent(urlParams.get('end'))}&arrivalDateTimeStr=${encodeURIComponent(desiredArrivalTime.toISOString())}`;
+        // 1. URL에서 파라미터 가져오기
+        const urlParams = new URLSearchParams(window.location.search);
         
-        // 결과는 기다리지 않아도 되므로 비동기 호출만 해둡니다.
-        fetch(saveUrl).then(() => logToServer("✅ 최종 최적 경로가 알람으로 저장되었습니다."));
+        // 2. 저장용 API 호출 URL 생성
+        // save=true (기본값)로 호출하여 DB에 저장을 유도합니다.
+        // arrivalDateTimeStr는 사용자가 입력한 '희망 도착 시간'입니다.
+        const saveUrl = `/api/tmap-car-directions?` + 
+            `start=${startCoords.lng()},${startCoords.lat()}` + 
+            `&end=${endCoords.lng()},${endCoords.lat()}` + 
+            `&departureTime=${bestTimeStr}` + 
+            `&startAddress=${encodeURIComponent(urlParams.get('start'))}` + 
+            `&endAddress=${encodeURIComponent(urlParams.get('end'))}` + 
+            `&arrivalDateTimeStr=${encodeURIComponent(desiredArrivalTime.toISOString())}` +
+            `&save=true`; // 명시적으로 저장 요청
+        
+        console.log("🔔 알람 저장을 위해 서버에 요청을 보냅니다...");
+        
+        // 3. 비동기 호출 (결과 기다리지 않음)
+        fetch(saveUrl)
+            .then(res => res.json())
+            .then(data => {
+                if(data.error) {
+                    logToServer("⚠️ 알람 저장 실패: " + data.error);
+                } else {
+                    logToServer("✅ 출발 알람이 성공적으로 예약되었습니다!");
+                    // 사용자에게 알림 (선택 사항)
+                    // alert("출발 시간에 맞춰 카카오톡 알림을 보내드립니다!");
+                }
+            })
+            .catch(err => logToServer("❌ 알람 저장 요청 중 오류 발생"));
     }
 
-    // 이진 탐색 완료 후 터미널 두 줄 띄우기
+    // 이진 탐색 완료 로그
     logToServer("");
-    logToServer("");
+    logToServer("=== 탐색 종료 ===");
 
     return bestRouteData;
 }
