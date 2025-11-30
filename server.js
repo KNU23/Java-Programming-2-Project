@@ -84,7 +84,7 @@ app.post('/api/log', (req, res) => {
 app.get('/api/auth/kakao/config', (req, res) => {
     res.json({
         restApiKey: process.env.KAKAO_REST_API_KEY,
-        redirectUri: 'http://localhost:3000/api/auth/kakao/callback'
+        redirectUri: 'https://javamap.azurewebsites.net/api/auth/kakao/callback'
     });
 });
 
@@ -216,7 +216,7 @@ app.get('/api/auth/kakao/callback', async (req, res) => {
         const tokenParams = new URLSearchParams({
             grant_type: 'authorization_code',
             client_id: process.env.KAKAO_REST_API_KEY,
-            redirect_uri: 'http://localhost:3000/api/auth/kakao/callback',
+            redirect_uri: 'https://javamap.azurewebsites.net/api/auth/kakao/callback',
             code: code,
         });
 
@@ -367,8 +367,8 @@ ${search.end_address}에 ${new Date(search.desired_arrival_time).toLocaleTimeStr
                 object_type: 'text',
                 text: textMessage,
                 link: {
-                    web_url: `http://localhost:3000/results.html?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=${search.mode}&date=${new Date(search.desired_arrival_time).toISOString().split('T')[0]}&time=${new Date(search.desired_arrival_time).toTimeString().substring(0,5)}`,
-                    mobile_web_url: `http://localhost:3000/results.html?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=${search.mode}&date=${new Date(search.desired_arrival_time).toISOString().split('T')[0]}&time=${new Date(search.desired_arrival_time).toTimeString().substring(0,5)}`
+                    web_url: `https://javamap.azurewebsites.net?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=${search.mode}&date=${new Date(search.desired_arrival_time).toISOString().split('T')[0]}&time=${new Date(search.desired_arrival_time).toTimeString().substring(0,5)}`,
+                    mobile_web_url: `https://javamap.azurewebsites.net?start=${encodeURIComponent(search.start_address)}&end=${encodeURIComponent(search.end_address)}&mode=${search.mode}&date=${new Date(search.desired_arrival_time).toISOString().split('T')[0]}&time=${new Date(search.desired_arrival_time).toTimeString().substring(0,5)}`
                 }
         };
 
