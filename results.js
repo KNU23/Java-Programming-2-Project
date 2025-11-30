@@ -335,116 +335,61 @@ async function initMap() {
     findAndDisplayRoute();
 }
 
-// [기존] (자동차용) 이진 탐색 함수
+// [수정됨] 서버 API를 이용한 고속 이진 탐색 함수
 async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredArrivalTime) {
-    logToServer(`이진 탐색 시작. 희망 도착 시간: ${desiredArrivalTime.toLocaleString()}`);
+    logToServer(`[클라이언트] 최적 출발 시간 계산 요청 시작...`);
 
-    let low = new Date(desiredArrivalTime.getTime() - CONFIG.BINARY_SEARCH_LOOKBACK_HOURS * 60 * 60 * 1000);
-    let high = new Date(desiredArrivalTime.getTime());
-
-    let bestRouteData = null;
-    let minDiff = Infinity;
-
-    // 이진 탐색 시작
-    for (let i = 0; i < CONFIG.BINARY_SEARCH_MAX_ITERATIONS; i++) {
-        const midDepartureTime = new Date((low.getTime() + high.getTime()) / 2);
-        const tmapTimeString = TimeUtils.formatToTmapTime(midDepartureTime);
-
-        // [수정] 원본 주소와 도착 시간을 쿼리 파라미터로 추가
-        const urlParams = new URLSearchParams(window.location.search);
-        const startAddr = encodeURIComponent(urlParams.get('start'));
-        const endAddr = encodeURIComponent(urlParams.get('end'));
-        const arrivalStr = encodeURIComponent(desiredArrivalTime.toISOString()); // "2025-11-15T09:00:00.000Z"
-
-        const apiUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${tmapTimeString}&startAddress=${startAddr}&endAddress=${endAddr}&arrivalDateTimeStr=${arrivalStr}&save=false`;
-        logToServer(`[${i + 1}/${CONFIG.BINARY_SEARCH_MAX_ITERATIONS}] API 호출... 출발시간: ${midDepartureTime.toLocaleString()}`);
-
-        const response = await fetch(apiUrl);
-        const tmapData = await response.json();
-
-        if (!response.ok) {
-            logToServer(`API 호출 실패, 이진 탐색 중단: ${tmapData.error || 'Unknown error'}`);
-            break;
-        }
-
-        const totalTimeSeconds = tmapData.features[0].properties.totalTime;
-        const calculatedArrivalTime = new Date(midDepartureTime.getTime() + totalTimeSeconds * 1000);
-        const diff = calculatedArrivalTime.getTime() - desiredArrivalTime.getTime();
-
-        logToServer(`  ㄴ 소요시간: ${Math.round(totalTimeSeconds / 60)}분, 계산된 도착: ${calculatedArrivalTime.toLocaleString()}, 오차: ${Math.round(diff / 60000)}분`);
-
-        if (Math.abs(diff) < minDiff) {
-            minDiff = Math.abs(diff);
-            bestRouteData = tmapData;
-            bestRouteData.recommendedDepartureTime = midDepartureTime;
-        }
-
-        if (Math.abs(diff) <= CONFIG.BINARY_SEARCH_TOLERANCE_MS) {
-            logToServer("정확한 시간 탐색 성공 (오차 1분 이내)");
-            break;
-        }
-
-        if (diff > 0) {
-            high = midDepartureTime;
-        } else {
-            low = midDepartureTime;
-        }
-
-        if (i === CONFIG.BINARY_SEARCH_MAX_ITERATIONS - 1) {
-            logToServer("최대 반복 도달. 탐색 종료.");
-        }
-    }
-
-    if (!bestRouteData) {
-        logToServer("이진 탐색 완전 실패. 기본 경로로 대체합니다.");
-        const fallbackResponse = await fetch(`/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}`);
-        bestRouteData = await fallbackResponse.json();
-    }
-
-// ✅ [수정] 알람 스위치 상태 확인
+    // 알람 스위치 상태 확인
     const alarmSwitch = document.getElementById('alarm-switch-header');
-    // 스위치가 있고, 'on' 버튼이 활성화되어 있으면 true
     const isAlarmOn = alarmSwitch && alarmSwitch.querySelector('.active[data-value="on"]');
 
-    // 조건: 최적 경로 있음 && 출발 시간 있음 && 🔔 알람 스위치가 켜져 있음(isAlarmOn)
-    if (bestRouteData && bestRouteData.recommendedDepartureTime && isAlarmOn) {
-        
-        const bestTimeStr = TimeUtils.formatToTmapTime(bestRouteData.recommendedDepartureTime);
-        const urlParams = new URLSearchParams(window.location.search);
+    // 주소 정보 가져오기 (URL 파라미터)
+    const urlParams = new URLSearchParams(window.location.search);
+    const startAddr = urlParams.get('start');
+    const endAddr = urlParams.get('end');
 
-        const saveUrl = `/api/tmap-car-directions?` + 
-            `start=${startCoords.lng()},${startCoords.lat()}` + 
-            `&end=${endCoords.lng()},${endCoords.lat()}` + 
-            `&departureTime=${bestTimeStr}` + 
-            `&startAddress=${encodeURIComponent(urlParams.get('start'))}` + 
-            `&endAddress=${encodeURIComponent(urlParams.get('end'))}` + 
-            `&arrivalDateTimeStr=${encodeURIComponent(desiredArrivalTime.toISOString())}` +
-            `&save=true`; 
-        
-        console.log("🔔 알람 스위치 ON: 서버에 알람 예약을 요청합니다...");
-
-        fetch(saveUrl)
-            .then(res => res.json())
-            .then(data => {
-                if(data.error) {
-                    logToServer("⚠️ 알람 저장 실패: " + data.error);
-                } else {
-                    logToServer("✅ 출발 알람이 성공적으로 예약되었습니다!");
-                    alert("출발 시간에 맞춰 카카오톡 알림을 보내드립니다!");
-                }
+    try {
+        // 서버에 한 번만 요청 (알람 저장 여부 'save' 포함)
+        const response = await fetch('/api/optimize-route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                start: `${startCoords.lng()},${startCoords.lat()}`,
+                end: `${endCoords.lng()},${endCoords.lat()}`,
+                arrivalDateTimeStr: desiredArrivalTime.toISOString(),
+                startAddress: startAddr,
+                endAddress: endAddr,
+                save: !!isAlarmOn // 알람 스위치가 켜져 있으면 true 전송
             })
-            .catch(err => logToServer("❌ 알람 저장 요청 중 오류 발생"));
+        });
 
-    } else {
-        // 알람 스위치가 꺼져 있거나 조건이 안 맞을 때
-        console.log("🔕 알람 스위치 OFF (또는 조건 미달): 알람을 저장하지 않습니다.");
+        const bestRouteData = await response.json();
+
+        if (!response.ok) {
+            throw new Error(bestRouteData.error || '서버 계산 실패');
+        }
+
+        // 서버에서 받은 날짜 문자열을 Date 객체로 복원
+        if (bestRouteData.recommendedDepartureTime) {
+            bestRouteData.recommendedDepartureTime = new Date(bestRouteData.recommendedDepartureTime);
+        }
+
+        logToServer(`[클라이언트] 계산 완료! 권장 출발: ${bestRouteData.recommendedDepartureTime?.toLocaleString()}`);
+
+        // 알람이 저장되었다면 사용자에게 알림
+        if (bestRouteData.alarmSaved) {
+            alert("출발 시간에 맞춰 카카오톡 알림을 보내드립니다! 🚗");
+        }
+
+        return bestRouteData;
+
+    } catch (error) {
+        logToServer(`[에러] 최적화 요청 실패: ${error.message}`);
+        console.error(error);
+        // 실패 시 기본 경로 요청으로 대체
+        const fallbackRes = await fetch(`/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}`);
+        return await fallbackRes.json();
     }
-
-    // 이진 탐색 완료 로그
-    logToServer("");
-    logToServer("=== 탐색 종료 ===");
-
-    return bestRouteData;
 }
 
 

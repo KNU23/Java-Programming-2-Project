@@ -688,6 +688,109 @@ async function getCoordinates(address) {
         }
     });
 
+// [추가] 서버에서 최적 출발 시간 계산 (이진 탐색) & 알람 저장 처리
+app.post('/api/optimize-route', authenticateToken, async (req, res) => {
+    const { start, end, arrivalDateTimeStr, startAddress, endAddress, save } = req.body;
+    
+    if (!start || !end || !arrivalDateTimeStr) {
+        return res.status(400).json({ error: '필수 정보가 누락되었습니다.' });
+    }
+
+    const [startX, startY] = start.split(',');
+    const [endX, endY] = end.split(',');
+    const desiredArrivalTime = new Date(arrivalDateTimeStr);
+    
+    // 설정값
+    const BINARY_SEARCH_MAX_ITERATIONS = 10;
+    const LOOKBACK_HOURS = 12;
+
+    let low = new Date(desiredArrivalTime.getTime() - LOOKBACK_HOURS * 60 * 60 * 1000);
+    let high = new Date(desiredArrivalTime.getTime());
+    
+    let bestRouteData = null;
+    let bestDepartureTime = null;
+    let minDiff = Infinity;
+
+    console.log(`[서버 최적화] ${arrivalDateTimeStr} 도착 기준 계산 시작...`);
+
+    try {
+        // 1. 이진 탐색 루프 (서버 내부에서 빠르게 실행)
+        for (let i = 0; i < BINARY_SEARCH_MAX_ITERATIONS; i++) {
+            const midDepartureTime = new Date((low.getTime() + high.getTime()) / 2);
+            
+            // TMAP 시간 포맷 (YYYYMMDDHHmm)
+            const y = midDepartureTime.getFullYear();
+            const m = (midDepartureTime.getMonth() + 1).toString().padStart(2, '0');
+            const d = midDepartureTime.getDate().toString().padStart(2, '0');
+            const h = midDepartureTime.getHours().toString().padStart(2, '0');
+            const min = midDepartureTime.getMinutes().toString().padStart(2, '0');
+            const tmapTime = `${y}${m}${d}${h}${min}`;
+
+            const apiUrl = 'https://apis.openapi.sk.com/tmap/routes?version=1';
+            const payload = { 
+                startX, startY, endX, endY, 
+                reqCoordType: 'WGS84GEO', resCoordType: 'WGS84GEO',
+                departureTime: tmapTime
+            };
+            const headers = { 'Content-Type': 'application/json', 'appKey': process.env.TMAP_API_KEY };
+
+            // TMAP 호출
+            const response = await axios.post(apiUrl, payload, { headers });
+            const tmapData = response.data;
+            const totalTimeSeconds = tmapData.features[0].properties.totalTime;
+
+            const calculatedArrivalTime = new Date(midDepartureTime.getTime() + totalTimeSeconds * 1000);
+            const diff = calculatedArrivalTime.getTime() - desiredArrivalTime.getTime();
+
+            // 오차가 더 적으면 갱신
+            if (Math.abs(diff) < minDiff) {
+                minDiff = Math.abs(diff);
+                bestRouteData = tmapData;
+                bestDepartureTime = midDepartureTime;
+            }
+
+            // 도착 예정 시간이 목표보다 늦으면 -> 더 일찍 출발해야 함 (high를 낮춤)
+            // 도착 예정 시간이 목표보다 빠르면 -> 더 늦게 출발해도 됨 (low를 높임)
+            if (diff > 0) {
+                high = midDepartureTime;
+            } else {
+                low = midDepartureTime;
+            }
+        }
+
+        // 2. 결과에 최적 출발 시간 추가
+        if (bestRouteData) {
+            bestRouteData.recommendedDepartureTime = bestDepartureTime;
+            
+            // 3. [저장 옵션] 알람 스위치가 켜져있고(save=true) 로그인이 되어있다면 DB 저장
+            if (save && req.user && req.user.userId && bestDepartureTime > new Date()) {
+                await pool.query(
+                    `INSERT INTO searches (user_id, start_address, end_address, mode, desired_arrival_time, calculated_departure_time, route_data_json)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [
+                        req.user.userId,
+                        startAddress,
+                        endAddress,
+                        'DRIVING',
+                        desiredArrivalTime,
+                        bestDepartureTime,
+                        bestRouteData
+                    ]
+                );
+                console.log(`[서버 DB 저장] 알람 예약 완료: ${bestDepartureTime.toLocaleString()}`);
+                bestRouteData.alarmSaved = true; // 클라이언트에 알람 저장됨을 알림
+            }
+        }
+
+        console.log(`[계산 완료] 오차: ${Math.round(minDiff/1000)}초`);
+        res.json(bestRouteData);
+
+    } catch (error) {
+        console.error('[서버 최적화 실패]', error.message);
+        res.status(500).json({ error: '최적 경로 계산 중 오류가 발생했습니다.' });
+    }
+});
+
 // ✅ [서버 실행] app.listen은 파일의 가장 마지막에 있어야 합니다.
 app.listen(port, () => {
     console.log(`🚀 서버가 http://localhost:${port} 에서 정상 실행 중입니다.`);
