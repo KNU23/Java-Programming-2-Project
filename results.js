@@ -1454,27 +1454,20 @@ async function updateUserPosition(position) {
     }
 }
 
-// 5. 경로 이탈 감지 및 재탐색
+// 5. 경로 이탈 감지 및 재탐색 (수정됨: URL 강제 업데이트 추가)
 async function checkRouteDeviation(userPos) {
-    // google.maps.geometry 라이브러리 필요 (html에서 로드함)
+    // google.maps.geometry 라이브러리 필요
     if (!google.maps.geometry) return;
 
-    // 경로(Polyline)가 있는지 확인
-    const path = customPolyline.getPath();
+    // 경로(Polyline)가 없으면 검사하지 않음
+    if (!customPolyline || !customPolyline.getMap()) return;
     
     // 내 위치가 경로 선상(오차범위 내)에 있는지 확인
-    // isLocationOnEdge(point, poly, toleranceDegrees)
-    // tolerance 1e-4는 약 10~15미터 정도입니다. 
-    // 여기서는 조금 넉넉하게 2e-4 (약 20~30m) 정도로 잡거나, 
-    // 정확한 미터 계산을 위해 computeDistanceBetween을 사용할 수도 있습니다.
-    
+    // 5e-4는 약 50m 정도의 오차 범위입니다.
     const isOnPath = google.maps.geometry.poly.isLocationOnEdge(userPos, customPolyline, 5e-4); 
 
     if (!isOnPath) {
-        console.log("⚠️ 경로 이탈 감지! 재탐색을 시도합니다...");
-        
-        // 반복 재탐색 방지를 위해 잠시 안내 중단 후 재개할 수도 있음
-        // 여기서는 현재 위치를 '출발지'로 설정하고 재검색
+        console.log("⚠️ 경로 이탈 감지! 현 위치를 새로운 출발지로 설정합니다...");
         
         // 1. 현재 좌표를 주소로 변환 (Reverse Geocoding)
         const geocoder = new google.maps.Geocoder();
@@ -1482,17 +1475,25 @@ async function checkRouteDeviation(userPos) {
         
         if (results[0]) {
             const newStartAddress = results[0].formatted_address;
+            console.log(`새 출발지: ${newStartAddress}`);
             
-            // 2. 검색창 값 업데이트
-            document.getElementById('start-point-header').value = newStartAddress;
+            // 2. 검색창 값 업데이트 (사용자 눈에 보이게)
+            const startInput = document.getElementById('start-point-header');
+            if (startInput) startInput.value = newStartAddress;
             
-            // 3. URL 업데이트 (새로고침 없이 상태 반영)
+            // 3. [핵심 수정] 브라우저의 실제 URL을 변경합니다!
+            // 이걸 안 하면 findAndDisplayRoute()가 옛날 주소를 읽어버립니다.
             const urlParams = new URLSearchParams(window.location.search);
             urlParams.set('start', newStartAddress);
-            // 좌표도 명확히 넘기기 위해 start 파라미터를 덮어쓰거나 그대로 둠
             
+            // 새 URL 생성
+            const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+            
+            // 브라우저 주소창 업데이트 (새로고침 없이)
+            window.history.pushState({path: newUrl}, '', newUrl);
+
             // 4. 경로 다시 찾기 함수 호출
-            // (기존 findAndDisplayRoute 함수가 입력창 값을 읽어서 실행함)
+            // (이제 업데이트된 URL을 읽어서 실행됩니다)
             await findAndDisplayRoute();
             
             console.log("✅ 재탐색 완료");
