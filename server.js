@@ -428,8 +428,6 @@ cron.schedule('* * * * *', async () => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`서버가 http://localhost:${port} 에서 실행 중입니다.`);
     // [함수] TMAP API를 사용하여 주소 -> 좌표(WGS84) 변환
 async function getCoordinates(address) {
     try {
@@ -682,6 +680,8 @@ async function getCoordinates(address) {
             res.status(500).json({ error: '서버 에러 발생' });
         }
     });
+
+// ✅ [서버 실행] app.listen은 파일의 가장 마지막에 있어야 합니다.
+app.listen(port, () => {
+    console.log(`🚀 서버가 http://localhost:${port} 에서 정상 실행 중입니다.`);
 });
-
-
