@@ -1354,3 +1354,148 @@ function updateLoginUI(container, isLoggedIn, nickname) {
         // 메인 페이지(index.html)로 이동시킵니다.
     }
 }
+
+// ==========================================
+// [추가] 실시간 경로 안내 및 재탐색 시스템
+// ==========================================
+
+let navWatchId = null;       // GPS 추적 ID
+let userMarker = null;       // 내 위치 마커
+let isNavigating = false;    // 안내 중인지 여부
+const REROUTE_THRESHOLD = 50; // 경로 이탈 허용 거리 (미터 단위)
+
+// 1. 안내 시작/종료 토글 함수
+function toggleNavigation() {
+    const btn = document.getElementById('nav-toggle-btn');
+    
+    if (isNavigating) {
+        // [안내 종료]
+        stopNavigation();
+        btn.innerHTML = '<i class="fa-solid fa-location-arrow"></i> 안내 시작';
+        btn.classList.remove('active');
+    } else {
+        // [안내 시작]
+        if (!navigator.geolocation) {
+            alert("이 브라우저는 GPS 기능을 지원하지 않습니다.");
+            return;
+        }
+        startNavigation();
+        btn.innerHTML = '<i class="fa-solid fa-stop"></i> 안내 종료';
+        btn.classList.add('active');
+    }
+}
+
+// 2. GPS 추적 시작
+function startNavigation() {
+    isNavigating = true;
+    
+    // watchPosition: 위치가 바뀔 때마다 실행됨
+    navWatchId = navigator.geolocation.watchPosition(
+        updateUserPosition, 
+        (err) => {
+            console.error("GPS 에러:", err);
+            alert("위치 정보를 가져올 수 없습니다.");
+            toggleNavigation(); // 에러 시 종료
+        }, 
+        {
+            enableHighAccuracy: true, // 고정밀 모드 (배터리 소모 높음)
+            maximumAge: 0,
+            timeout: 5000
+        }
+    );
+}
+
+// 3. 안내 종료
+function stopNavigation() {
+    isNavigating = false;
+    if (navWatchId) {
+        navigator.geolocation.clearWatch(navWatchId);
+        navWatchId = null;
+    }
+    if (userMarker) {
+        userMarker.setMap(null);
+        userMarker = null;
+    }
+    map.setHeading(0); // 지도 회전 초기화 (선택 사항)
+}
+
+// 4. 위치 업데이트 및 로직 처리 (핵심)
+async function updateUserPosition(position) {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const userPos = new google.maps.LatLng(lat, lng);
+
+    // 4-1. 내 위치 마커 표시 (파란색 점)
+    if (!userMarker) {
+        userMarker = new google.maps.Marker({
+            position: userPos,
+            map: map,
+            icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 10,
+                fillColor: "#4285F4",
+                fillOpacity: 1,
+                strokeColor: "white",
+                strokeWeight: 2,
+            },
+            zIndex: 99999
+        });
+    } else {
+        userMarker.setPosition(userPos);
+    }
+
+    // 4-2. 지도 중심을 내 위치로 이동 (내비게이션 느낌)
+    map.panTo(userPos);
+    if (map.getZoom() < 16) map.setZoom(17); // 줌 레벨 확대
+
+    // 4-3. 경로 이탈 체크 (현재 표시된 경로가 있을 때만)
+    if (customPolyline && customPolyline.getMap()) {
+        checkRouteDeviation(userPos);
+    }
+}
+
+// 5. 경로 이탈 감지 및 재탐색
+async function checkRouteDeviation(userPos) {
+    // google.maps.geometry 라이브러리 필요 (html에서 로드함)
+    if (!google.maps.geometry) return;
+
+    // 경로(Polyline)가 있는지 확인
+    const path = customPolyline.getPath();
+    
+    // 내 위치가 경로 선상(오차범위 내)에 있는지 확인
+    // isLocationOnEdge(point, poly, toleranceDegrees)
+    // tolerance 1e-4는 약 10~15미터 정도입니다. 
+    // 여기서는 조금 넉넉하게 2e-4 (약 20~30m) 정도로 잡거나, 
+    // 정확한 미터 계산을 위해 computeDistanceBetween을 사용할 수도 있습니다.
+    
+    const isOnPath = google.maps.geometry.poly.isLocationOnEdge(userPos, customPolyline, 5e-4); 
+
+    if (!isOnPath) {
+        console.log("⚠️ 경로 이탈 감지! 재탐색을 시도합니다...");
+        
+        // 반복 재탐색 방지를 위해 잠시 안내 중단 후 재개할 수도 있음
+        // 여기서는 현재 위치를 '출발지'로 설정하고 재검색
+        
+        // 1. 현재 좌표를 주소로 변환 (Reverse Geocoding)
+        const geocoder = new google.maps.Geocoder();
+        const { results } = await geocoder.geocode({ location: userPos });
+        
+        if (results[0]) {
+            const newStartAddress = results[0].formatted_address;
+            
+            // 2. 검색창 값 업데이트
+            document.getElementById('start-point-header').value = newStartAddress;
+            
+            // 3. URL 업데이트 (새로고침 없이 상태 반영)
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set('start', newStartAddress);
+            // 좌표도 명확히 넘기기 위해 start 파라미터를 덮어쓰거나 그대로 둠
+            
+            // 4. 경로 다시 찾기 함수 호출
+            // (기존 findAndDisplayRoute 함수가 입력창 값을 읽어서 실행함)
+            await findAndDisplayRoute();
+            
+            console.log("✅ 재탐색 완료");
+        }
+    }
+}
