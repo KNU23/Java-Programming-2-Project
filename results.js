@@ -139,12 +139,14 @@ function setupSwitch(switchId) {
     if (!switchContainer) return;
 
     const buttons = switchContainer.querySelectorAll('.switch-btn');
+    // inputGroup이 없을 수도 있으므로 안전하게 처리
     const inputGroup = switchContainer.closest('.input-group');
-    const input = inputGroup.querySelector('input');
-    const label = inputGroup.querySelector('label');
+    const input = inputGroup ? inputGroup.querySelector('input') : null; 
+    const label = inputGroup ? inputGroup.querySelector('label') : null;
 
     // 🕓 현재 시간 가져오기 헬퍼
     const setToCurrentDateTime = () => {
+        if (!input) return; // input이 없으면 시간 설정 패스
         const current = getCurrentDateTime();
         if (switchId.includes('date')) {
             input.value = current.date;
@@ -158,12 +160,12 @@ function setupSwitch(switchId) {
     if (savedState === "off") {
         buttons.forEach(btn => btn.classList.remove('active'));
         const offButton = switchContainer.querySelector('[data-value="off"]');
-        offButton.classList.add('active');
-        input.disabled = true;
+        if(offButton) offButton.classList.add('active');
+        
+        if (input) input.disabled = true; // input이 있을 때만 비활성화
         if (switchId.includes('time') && label) label.textContent = '출발 시간';
-        setToCurrentDateTime(); // off 시 현재 시간 유지
+        setToCurrentDateTime(); 
     } else {
-        // 기본 on 상태
         setToCurrentDateTime();
     }
 
@@ -175,7 +177,7 @@ function setupSwitch(switchId) {
             button.classList.add('active');
 
             const isOff = button.dataset.value === 'off';
-            input.disabled = isOff;
+            if (input) input.disabled = isOff; // input이 있을 때만 동작
 
             // 상태 저장
             localStorage.setItem(CONFIG.LOCALSTORAGE_PREFIX + switchId + "_state", isOff ? "off" : "on");
@@ -399,17 +401,17 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
         bestRouteData = await fallbackResponse.json();
     }
 
-// ✅ [수정] 최종 결과 DB 저장 로직 (알람 예약)
-    // 조건: 최적 경로가 있고, 계산된 출발 시간이 존재하며, 로그인 상태일 때(서버가 체크)
-    if (bestRouteData && bestRouteData.recommendedDepartureTime) {
+// ✅ [수정] 알람 스위치 상태 확인
+    const alarmSwitch = document.getElementById('alarm-switch-header');
+    // 스위치가 있고, 'on' 버튼이 활성화되어 있으면 true
+    const isAlarmOn = alarmSwitch && alarmSwitch.querySelector('.active[data-value="on"]');
+
+    // 조건: 최적 경로 있음 && 출발 시간 있음 && 🔔 알람 스위치가 켜져 있음(isAlarmOn)
+    if (bestRouteData && bestRouteData.recommendedDepartureTime && isAlarmOn) {
+        
         const bestTimeStr = TimeUtils.formatToTmapTime(bestRouteData.recommendedDepartureTime);
-        
-        // 1. URL에서 파라미터 가져오기
         const urlParams = new URLSearchParams(window.location.search);
-        
-        // 2. 저장용 API 호출 URL 생성
-        // save=true (기본값)로 호출하여 DB에 저장을 유도합니다.
-        // arrivalDateTimeStr는 사용자가 입력한 '희망 도착 시간'입니다.
+
         const saveUrl = `/api/tmap-car-directions?` + 
             `start=${startCoords.lng()},${startCoords.lat()}` + 
             `&end=${endCoords.lng()},${endCoords.lat()}` + 
@@ -417,11 +419,10 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
             `&startAddress=${encodeURIComponent(urlParams.get('start'))}` + 
             `&endAddress=${encodeURIComponent(urlParams.get('end'))}` + 
             `&arrivalDateTimeStr=${encodeURIComponent(desiredArrivalTime.toISOString())}` +
-            `&save=true`; // 명시적으로 저장 요청
+            `&save=true`; 
         
-        console.log("🔔 알람 저장을 위해 서버에 요청을 보냅니다...");
-        
-        // 3. 비동기 호출 (결과 기다리지 않음)
+        console.log("🔔 알람 스위치 ON: 서버에 알람 예약을 요청합니다...");
+
         fetch(saveUrl)
             .then(res => res.json())
             .then(data => {
@@ -429,12 +430,14 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
                     logToServer("⚠️ 알람 저장 실패: " + data.error);
                 } else {
                     logToServer("✅ 출발 알람이 성공적으로 예약되었습니다!");
-                    
-                    // ✅ [수정] 주석 해제 (사용자에게 팝업으로 알려주기)
                     alert("출발 시간에 맞춰 카카오톡 알림을 보내드립니다!");
                 }
             })
             .catch(err => logToServer("❌ 알람 저장 요청 중 오류 발생"));
+
+    } else {
+        // 알람 스위치가 꺼져 있거나 조건이 안 맞을 때
+        console.log("🔕 알람 스위치 OFF (또는 조건 미달): 알람을 저장하지 않습니다.");
     }
 
     // 이진 탐색 완료 로그
@@ -1292,6 +1295,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupSwitch('date-switch-header');
     setupSwitch('time-switch-header');
+    setupSwitch('alarm-switch-header'); // ✅ [추가] 알람 스위치 초기화
 
     // 4. [추가] 키보드 방향키(→)로 다음 경로 탐색
     document.addEventListener('keydown', (e) => {
