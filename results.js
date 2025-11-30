@@ -415,32 +415,70 @@ async function findAndDisplayRoute() {
     const end = urlParams.get('end');
     const mode = urlParams.get('mode');
 
-    const arrivalDate = urlParams.get('date');
-    const arrivalTime = urlParams.get('time');
+    //  앱에서 'time' 파라미터를 "YYYY-MM-DDTHH:mm" 형식으로 보냄
+    // 예: time=2025-11-30T18:30
+    const fullTimeStr = urlParams.get('time');
+    let arrivalDateVal = urlParams.get('date'); // 기존 방식 호환
+    let arrivalTimeVal = urlParams.get('time'); // 기존 방식 호환
 
-    document.getElementById('start-point-header').value = start;
-    document.getElementById('end-point-header').value = end;
-    
-    // URL에 날짜/시간 값이 있을 때만 input에 설정 (없으면 setupSwitch의 현재시간 유지)
-    if (arrivalDate) document.getElementById('arrival-date-header').value = arrivalDate;
-    if (arrivalTime) document.getElementById('arrival-time-header').value = arrivalTime;
-    
-    document.getElementById('transport-mode-header').value = mode;
-    document.querySelectorAll('.transport-mode').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+    // 만약 time 파라미터가 ISO 형식이면 분리해서 처리
+    if (fullTimeStr && fullTimeStr.includes('T')) {
+        const parts = fullTimeStr.split('T');
+        arrivalDateVal = parts[0]; // 2025-11-30
+        arrivalTimeVal = parts[1]; // 18:30
+    }
+
+    // Input 요소에 값 채우기
+    document.getElementById('start-point-header').value = start || '';
+    document.getElementById('end-point-header').value = end || '';
+
+    if (arrivalDateVal) {
+        document.getElementById('arrival-date-header').value = arrivalDateVal;
+        // 날짜 스위치 켜기 (과거 시간 체크 무시를 위해)
+        const dateSwitch = document.getElementById('date-switch-header');
+        if (dateSwitch) {
+            // 스위치 UI 강제 활성화 로직 (필요 시)
+            dateSwitch.querySelector('[data-value="on"]').click();
+        }
+    }
+    if (arrivalTimeVal) {
+        // 시간은 HH:mm 형식이어야 함 (초 단위 제거)
+        const cleanTime = arrivalTimeVal.substring(0, 5);
+        document.getElementById('arrival-time-header').value = cleanTime;
+
+        const timeSwitch = document.getElementById('time-switch-header');
+        if (timeSwitch) {
+            timeSwitch.querySelector('[data-value="on"]').click();
+        }
+    }
+
+    document.getElementById('transport-mode-header').value = mode || 'TRANSIT';
+    if (mode) {
+        document.querySelectorAll('.transport-mode').forEach(btn =>
+            btn.classList.toggle('active', btn.dataset.mode === mode)
+        );
+    }
 
     if (!start || !end || !mode) return;
 
-    let arrivalDateTime = null; // Google Transit API용
-    let arrivalDateTimeStr = null; // TMAP/ORS 계산용
-    
-    // URL 파라미터가 없으면 현재 input 값 사용 (setupSwitch에서 설정한 현재시간)
-    const finalDate = arrivalDate || document.getElementById('arrival-date-header').value;
-    const finalTime = arrivalTime || document.getElementById('arrival-time-header').value;
+    // [핵심] API 호출용 날짜 객체 생성
+    let arrivalDateTime = null;     // Google용 Date 객체
+    let arrivalDateTimeStr = null;  // TMAP용 문자열
+
+    // URL 파라미터 우선, 없으면 Input 값 사용
+    const finalDate = arrivalDateVal || document.getElementById('arrival-date-header').value;
+    const finalTime = arrivalTimeVal || document.getElementById('arrival-time-header').value;
     
     if (finalDate && finalTime) {
-        const timeStr = finalTime.length === 5 ? `${finalTime}:00` : finalTime;
-        arrivalDateTime = new Date(`${finalDate}T${timeStr}`);
-        arrivalDateTimeStr = `${finalDate}T${timeStr}`;
+        const cleanTime = finalTime.substring(0, 5); // HH:mm
+        const isoString = `${finalDate}T${cleanTime}:00`;
+
+        arrivalDateTime = new Date(isoString);
+        arrivalDateTimeStr = isoString;
+
+        console.log("설정된 도착 시간:", arrivalDateTime.toLocaleString());
+    } else {
+        console.log("도착 시간 미설정 (현재 시간 기준 검색)");
     }
 
     directionsRenderer.setDirections({ routes: [] });

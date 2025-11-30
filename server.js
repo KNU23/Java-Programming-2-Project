@@ -420,4 +420,258 @@ cron.schedule('* * * * *', async () => {
 
 app.listen(port, () => {
     console.log(`서버가 http://localhost:${port} 에서 실행 중입니다.`);
+    // [함수] TMAP API를 사용하여 주소 -> 좌표(WGS84) 변환
+async function getCoordinates(address) {
+    try {
+        const response = await axios.get(`https://apis.openapi.sk.com/tmap/geo/fullAddrGeo`, {
+            params: {
+                version: 1,
+                format: 'json',
+                appKey: process.env.TMAP_API_KEY, // .env 파일의 TMAP_API_KEY 사용
+                coordType: 'WGS84GEO',
+                fullAddr: address
+            }
+        });
+
+        const info = response.data.coordinateInfo;
+        if (!info || !info.coordinate || info.coordinate.length === 0) {
+            throw new Error('좌표 변환 실패');
+        }
+
+        // TMAP 응답에서 위도/경도 추출
+        const lat = info.coordinate[0].newLat || info.coordinate[0].lat;
+        const lon = info.coordinate[0].newLon || info.coordinate[0].lon;
+
+        return { lat, lng: lon };
+    } catch (error) {
+        console.error(`[좌표변환 에러] ${address}:`, error.message);
+        throw error;
+    }
+}
+
+// [API] 주소 기반 길찾기 (앱에서 이 주소로 요청을 보냅니다)   // 수정됨
+    // [API] 주소 기반 길찾기 & 소요시간 계산 (모드별 API 분기 처리)
+    app.post('/api/route/by-address', async (req, res) => {
+        const { startAddress, endAddress, mode } = req.body;
+        console.log(`[길찾기 요청] ${startAddress} -> ${endAddress} (모드: ${mode})`);
+
+        try {
+            // 1. 좌표 변환 (TMAP Geocoding 공통 사용)
+            const [startCoord, endCoord] = await Promise.all([
+                getCoordinates(startAddress),
+                getCoordinates(endAddress)
+            ]);
+
+            let durationSeconds = 0; // 소요 시간(초)
+            let routeData = null;    // 경로 데이터
+
+            // 2. 이동 수단별 API 호출 분기
+            if (mode === 'TRANSIT') {
+                // 🚌 대중교통: Google Maps Directions API
+                const googleKey = process.env.GOOGLE_MAPS_API_KEY;
+                const url = `https://maps.googleapis.com/maps/api/directions/json`;
+
+                const response = await axios.get(url, {
+                    params: {
+                        origin: `${startCoord.lat},${startCoord.lng}`,
+                        destination: `${endCoord.lat},${endCoord.lng}`,
+                        mode: 'transit',
+                        language: 'ko',
+                        key: googleKey
+                    }
+                });
+
+                if (response.data.status === 'OK') {
+                    durationSeconds = response.data.routes[0].legs[0].duration.value;
+                    routeData = response.data;
+                } else {
+                    throw new Error(`구글 길찾기 실패: ${response.data.status}`);
+                }
+
+            } else if (mode === 'BICYCLING') {
+                // 🚲 자전거: OpenRouteService (ORS) API
+                const orsKey = process.env.ORS_API_KEY;
+                // ORS는 '경도,위도' 순서임에 주의!
+                const url = `https://api.openrouteservice.org/v2/directions/cycling-regular?api_key=${orsKey}&start=${startCoord.lng},${startCoord.lat}&end=${endCoord.lng},${endCoord.lat}`;
+
+                const response = await axios.get(url);
+
+                if (response.data.features && response.data.features.length > 0) {
+                    durationSeconds = response.data.features[0].properties.segments[0].duration;
+                    routeData = response.data;
+                } else {
+                    throw new Error('ORS 자전거 길찾기 실패');
+                }
+
+            } else if (mode === 'WALKING') {
+                // 🚶 도보: TMAP 보행자 API
+                const response = await axios.post(
+                    'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
+                    {
+                        startX: parseFloat(startCoord.lng),
+                        startY: parseFloat(startCoord.lat),
+                        endX: parseFloat(endCoord.lng),
+                        endY: parseFloat(endCoord.lat),
+                        reqCoordType: "WGS84GEO",
+                        resCoordType: "WGS84GEO",
+                        startName: "Start",
+                        endName: "End"
+                    },
+                    { headers: { appKey: process.env.TMAP_API_KEY } }
+                );
+                durationSeconds = response.data.features[0].properties.totalTime;
+                routeData = response.data;
+
+            } else {
+                // 🚗 운전 (기본값): TMAP 자동차 API
+                const response = await axios.post(
+                    'https://apis.openapi.sk.com/tmap/routes?version=1&format=json',
+                    {
+                        startX: parseFloat(startCoord.lng),
+                        startY: parseFloat(startCoord.lat),
+                        endX: parseFloat(endCoord.lng),
+                        endY: parseFloat(endCoord.lat),
+                        reqCoordType: "WGS84GEO",
+                        resCoordType: "WGS84GEO",
+                        totalValue: 2
+                    },
+                    { headers: { appKey: process.env.TMAP_API_KEY } }
+                );
+                durationSeconds = response.data.features[0].properties.totalTime;
+                routeData = response.data;
+            }
+
+            console.log(`[계산 완료] 소요시간: ${Math.round(durationSeconds / 60)}분`);
+
+            res.json({
+                success: true,
+                duration: durationSeconds, // 앱에서 출발시간 계산용
+                data: routeData,
+                coords: { start: startCoord, end: endCoord }
+            });
+
+        } catch (error) {
+            console.error('[서버 길찾기 실패]', error.message);
+            // 에러 상세 정보 출력 (디버깅용)
+            if (error.response) console.error(error.response.data);
+
+            res.status(500).json({ success: false, message: '길찾기 실패', error: error.message });
+        }
+    });
+    // [함수] TMAP API를 사용하여 주소 -> 좌표(WGS84) 변환 // 수정됨
+    async function getCoordinates(address) {
+        try {
+            const response = await axios.get(`https://apis.openapi.sk.com/tmap/geo/fullAddrGeo`, {
+                params: {
+                    version: 1,
+                    format: 'json',
+                    appKey: process.env.TMAP_API_KEY, // .env 파일의 TMAP_API_KEY 사용
+                    coordType: 'WGS84GEO',
+                    fullAddr: address
+                }
+            });
+
+            const info = response.data.coordinateInfo;
+            if (!info || !info.coordinate || info.coordinate.length === 0) {
+                throw new Error('좌표 변환 실패');
+            }
+
+            // TMAP 응답에서 위도/경도 추출
+            const lat = info.coordinate[0].newLat || info.coordinate[0].lat;
+            const lon = info.coordinate[0].newLon || info.coordinate[0].lon;
+
+            return { lat, lng: lon };
+        } catch (error) {
+            console.error(`[좌표변환 에러] ${address}:`, error.message);
+            throw error;
+        }
+    }
+
+    // [API] 주소 기반 길찾기 (앱에서 이 주소로 요청을 보냅니다)  // 수정됨
+    app.post('/api/route/by-address', async (req, res) => {
+        const { startAddress, endAddress } = req.body;
+        console.log(`[길찾기 요청] ${startAddress} -> ${endAddress}`);
+
+        try {
+            // 1. 출발지 & 목적지 주소를 좌표로 변환 (병렬 처리)
+            const [startCoord, endCoord] = await Promise.all([
+                getCoordinates(startAddress),
+                getCoordinates(endAddress)
+            ]);
+
+            console.log(`[좌표 변환 완료] 출발: ${startCoord.lat},${startCoord.lng} / 도착: ${endCoord.lat},${endCoord.lng}`);
+
+            // 2. 변환된 좌표로 TMAP 보행자 경로 안내 요청
+            const tmapRes = await axios.post(
+                'https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json',
+                {
+                    startX: parseFloat(startCoord.lng),
+                    startY: parseFloat(startCoord.lat),
+                    endX: parseFloat(endCoord.lng),
+                    endY: parseFloat(endCoord.lat),
+                    reqCoordType: "WGS84GEO",
+                    resCoordType: "WGS84GEO",
+                    startName: "출발지",
+                    endName: "목적지"
+                },
+                { headers: { appKey: process.env.TMAP_API_KEY } }
+            );
+
+            // 3. 앱에게 결과 반환 (경로 데이터 + 변환된 좌표)
+            res.json({
+                success: true,
+                data: tmapRes.data,
+                coords: { start: startCoord, end: endCoord }
+            });
+
+        } catch (error) {
+            console.error('[서버 에러]', error.message);
+            res.status(500).json({ success: false, message: '길찾기 실패', error: error.message });
+        }
+    });
+    //  구글 장소 검색 프록시 (앱 -> 내 서버 -> 구글 API)  // 수정됨
+    app.get('/api/search/address', async (req, res) => {
+        const { keyword } = req.query;
+        console.log(`[1. 요청수신] 검색어: ${keyword}`);
+
+        try {
+            const GOOGLE_KEY = process.env.GOOGLE_MAPS_API_KEY;
+
+            // 키가 제대로 로드되었는지 확인
+            if (!GOOGLE_KEY) {
+                console.error("[오류] .env 파일에 GOOGLE_MAPS_API_KEY가 없습니다!");
+                return res.status(500).json({ error: 'API 키 누락' });
+            }
+
+            console.log(`[2. 구글호출] 키(앞5자리): ${GOOGLE_KEY.substring(0, 5)}...`);
+
+            const response = await axios.get('https://maps.googleapis.com/maps/api/place/autocomplete/json', {
+                params: {
+                    input: keyword,
+                    key: GOOGLE_KEY,
+                    language: 'ko',
+                    components: 'country:kr'
+                }
+            });
+
+            // 구글 응답 전체 로그 출력 (에러 원인 파악용)
+            console.log(`[3. 구글응답] 상태: ${response.data.status}`);
+
+            if (response.data.status !== 'OK') {
+                console.log(`[구글 에러 메시지] ${response.data.error_message}`);
+            }
+
+            res.json(response.data);
+
+        } catch (error) {
+            console.error('[서버 내부 에러]', error.message);
+            // 에러 상세 내용 출력
+            if (error.response) {
+                console.error('응답 데이터:', error.response.data);
+            }
+            res.status(500).json({ error: '서버 에러 발생' });
+        }
+    });
 });
+
+
