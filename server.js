@@ -159,12 +159,12 @@ app.get('/api/tmap-car-directions', authenticateToken, async (req, res) => {
         const response = await axios.post(apiUrl, payload, { headers });
 
         // 3. API 응답 성공 후, 로그인한 사용자이고 '역방향 찾기'라면 DB에 저장
-        if (req.user && req.user.userId && departureTime && arrivalDateTimeStr) {
+if (req.user && req.user.userId && departureTime && arrivalDateTimeStr && req.query.save !== 'false') {
             
             const tmapData = response.data;
             const totalTimeSeconds = tmapData.features[0].properties.totalTime;
             
-            // TMAP API 호출 시 사용한 출발 시간 (이진 탐색 결과)
+            // 계산된 출발 시간
             const departureDate = new Date(
                 departureTime.substring(0, 4),
                 parseInt(departureTime.substring(4, 6)) - 1,
@@ -173,25 +173,29 @@ app.get('/api/tmap-car-directions', authenticateToken, async (req, res) => {
                 departureTime.substring(10, 12)
             );
 
-            await pool.query(
-                `INSERT INTO searches (user_id, start_address, end_address, mode, desired_arrival_time, calculated_departure_time, route_data_json)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [
-                    req.user.userId,
-                    startAddress,
-                    endAddress,
-                    'DRIVING',
-                    new Date(arrivalDateTimeStr), // 희망 도착 시간
-                    departureDate,               // 계산된 출발 시간
-                    tmapData                     // API 결과 저장
-                ]
-            );
-            // ✅ [로그 추가]
-            console.log(`[DB 저장 완료] 알람이 DB에 저장되었습니다. 출발 시간: ${departureDate.toLocaleString()}`);
+            // [추가된 로직] 현재 시간보다 미래일 때만 저장 (이미 지난 시간은 알람 X)
+            if (departureDate > new Date()) {
+                await pool.query(
+                    `INSERT INTO searches (user_id, start_address, end_address, mode, desired_arrival_time, calculated_departure_time, route_data_json)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                    [
+                        req.user.userId,
+                        startAddress,
+                        endAddress,
+                        'DRIVING',
+                        new Date(arrivalDateTimeStr),
+                        departureDate,
+                        tmapData
+                    ]
+                );
+                console.log(`[DB 저장 완료] 알람 저장됨. 출발 시간: ${departureDate.toLocaleString()}`);
+            } else {
+                console.log(`[DB 저장 스킵] 계산된 출발 시간(${departureDate.toLocaleString()})이 이미 지났습니다.`);
+            }
 
         } else {
-            // ✅ [else 블록 및 로그 추가]
-            console.log('[DB 저장 스킵] 로그인이 안되었거나(req.user 없음), 역방향 길찾기가 아니므로(departureTime 없음) DB에 저장하지 않습니다.');
+            // save=false 이거나 로그인이 안 된 경우
+            // console.log('[DB 저장 스킵] 계산 전용 요청이거나 조건 미달입니다.');
         }
         
         console.log('TMAP 자동차 경로 API 호출 성공');

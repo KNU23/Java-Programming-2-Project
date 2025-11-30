@@ -354,8 +354,7 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
         const endAddr = encodeURIComponent(urlParams.get('end'));
         const arrivalStr = encodeURIComponent(desiredArrivalTime.toISOString()); // "2025-11-15T09:00:00.000Z"
 
-        const apiUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${tmapTimeString}&startAddress=${startAddr}&endAddress=${endAddr}&arrivalDateTimeStr=${arrivalStr}`;
-
+        const apiUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${tmapTimeString}&startAddress=${startAddr}&endAddress=${endAddr}&arrivalDateTimeStr=${arrivalStr}&save=false`;
         logToServer(`[${i + 1}/${CONFIG.BINARY_SEARCH_MAX_ITERATIONS}] API 호출... 출발시간: ${midDepartureTime.toLocaleString()}`);
 
         const response = await fetch(apiUrl);
@@ -398,6 +397,17 @@ async function findDrivingRouteWithBinarySearch(startCoords, endCoords, desiredA
         logToServer("이진 탐색 완전 실패. 기본 경로로 대체합니다.");
         const fallbackResponse = await fetch(`/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}`);
         bestRouteData = await fallbackResponse.json();
+    }
+
+    // [여기 추가] 이진 탐색으로 찾은 '최종 결과'를 DB에 저장하기 위해 한 번 더 호출
+    if (bestRouteData && bestRouteData.recommendedDepartureTime) {
+        const bestTimeStr = TimeUtils.formatToTmapTime(bestRouteData.recommendedDepartureTime);
+        
+        // save=true (기본값)로 호출하여 DB에 저장
+        const saveUrl = `/api/tmap-car-directions?start=${startCoords.lng()},${startCoords.lat()}&end=${endCoords.lng()},${endCoords.lat()}&departureTime=${bestTimeStr}&startAddress=${encodeURIComponent(urlParams.get('start'))}&endAddress=${encodeURIComponent(urlParams.get('end'))}&arrivalDateTimeStr=${encodeURIComponent(desiredArrivalTime.toISOString())}`;
+        
+        // 결과는 기다리지 않아도 되므로 비동기 호출만 해둡니다.
+        fetch(saveUrl).then(() => logToServer("✅ 최종 최적 경로가 알람으로 저장되었습니다."));
     }
 
     // 이진 탐색 완료 후 터미널 두 줄 띄우기
