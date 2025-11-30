@@ -1419,37 +1419,79 @@ function stopNavigation() {
     map.setHeading(0); // 지도 회전 초기화 (선택 사항)
 }
 
-// 4. 위치 업데이트 및 로직 처리 (핵심)
+// [수정됨] 4. 위치 업데이트 및 마커 설정 (드래그 수정 기능 추가)
 async function updateUserPosition(position) {
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
     const userPos = new google.maps.LatLng(lat, lng);
 
-    // 4-1. 내 위치 마커 표시 (파란색 점)
+    // 4-1. 내 위치 마커 표시
     if (!userMarker) {
         userMarker = new google.maps.Marker({
             position: userPos,
             map: map,
+            draggable: true, // ✅ [핵심] 마커를 드래그할 수 있게 설정
             icon: {
                 path: google.maps.SymbolPath.CIRCLE,
                 scale: 10,
                 fillColor: "#4285F4",
                 fillOpacity: 1,
                 strokeColor: "white",
-                strokeWeight: 2,
+                strokeWeight: 3, // 테두리를 좀 더 두껍게
             },
-            zIndex: 99999
+            zIndex: 99999,
+            title: "내 위치 (드래그하여 수정 가능)"
         });
+
+        // ✅ [추가] 마커 드래그가 끝났을 때 이벤트
+        userMarker.addListener('dragend', async function(event) {
+            console.log("📍 위치 수동 보정됨");
+            
+            // 1. 자동 추적 잠시 중지 (안 그러면 GPS가 다시 원래대로 돌려놓음)
+            if (navWatchId) navigator.geolocation.clearWatch(navWatchId);
+            
+            // 2. 버튼 상태 변경
+            const btn = document.getElementById('nav-toggle-btn');
+            if(btn) {
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> 위치 보정됨';
+                btn.classList.remove('active'); // 깜빡임 효과 제거
+            }
+            isNavigating = false; // 안내 상태 해제
+
+            // 3. 드래그한 위치를 새로운 '출발지'로 설정
+            const newPos = event.latLng;
+            
+            // 주소 변환 (좌표 -> 주소)
+            const geocoder = new google.maps.Geocoder();
+            const { results } = await geocoder.geocode({ location: newPos });
+            
+            if (results[0]) {
+                const newAddress = results[0].formatted_address;
+                document.getElementById('start-point-header').value = newAddress;
+                
+                // 4. 경로 재탐색 시작
+                // (URL 업데이트 및 재검색)
+                const urlParams = new URLSearchParams(window.location.search);
+                urlParams.set('start', newAddress);
+                const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+                window.history.pushState({path: newUrl}, '', newUrl);
+                
+                await findAndDisplayRoute();
+            }
+        });
+
     } else {
+        // 이미 마커가 있으면 위치만 이동 (드래그 중이 아닐 때만)
         userMarker.setPosition(userPos);
     }
 
-    // 4-2. 지도 중심을 내 위치로 이동 (내비게이션 느낌)
-    map.panTo(userPos);
-    if (map.getZoom() < 16) map.setZoom(17); // 줌 레벨 확대
+    // 4-2. 지도 중심 이동 (안내 모드일 때만)
+    if (isNavigating) {
+        map.panTo(userPos);
+    }
 
-    // 4-3. 경로 이탈 체크 (현재 표시된 경로가 있을 때만)
-    if (customPolyline && customPolyline.getMap()) {
+    // 4-3. 경로 이탈 체크
+    if (isNavigating && customPolyline && customPolyline.getMap()) {
         checkRouteDeviation(userPos);
     }
 }
