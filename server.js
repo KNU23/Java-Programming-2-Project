@@ -34,7 +34,10 @@ pool.on('connect', (client) => {
 });
 console.log('PostgreSQL DB 연결 풀 생성됨');
 
+const cors = require('cors');
 const app = express();
+
+app.use(cors());
 const port = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname)));
