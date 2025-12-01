@@ -289,6 +289,12 @@ app.get('/api/auth/kakao/callback', async (req, res) => {
     }
 });
 
+// [추가] 홈 화면 타이틀(오늘의 문구) 조회 API
+app.get('/api/settings/title/:date', (req, res) => {
+    // 임시로 고정된 문구 반환 (나중에 DB 연동 가능)
+    res.json({ title: "오늘도 힘찬 하루 보내세요! 🌿" });
+});
+
 // ✅ 1. 로그인 상태 확인 API (닉네임 반환)
 // (authenticateToken 미들웨어는 이 코드보다 위에 정의되어 있어야 합니다)
 app.get('/api/auth/status', authenticateToken, async (req, res) => {
